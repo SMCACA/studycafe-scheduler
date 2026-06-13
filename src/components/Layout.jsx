@@ -1,0 +1,253 @@
+import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { supabase } from '../lib/supabaseClient'
+import logoSrc from '../assets/smc_logo.png'
+import {
+  LayoutDashboard, Users, CalendarDays, MessageSquare,
+  LogOut, ChevronDown, ChevronRight, ClipboardList, Eye, BookOpen, Star,
+} from 'lucide-react'
+
+const SIDEBAR_W = 400
+const TOPBAR_H  = 58
+
+const menuItems = [
+  { label: '대시보드',  path: '/dashboard',  icon: LayoutDashboard },
+  { label: '학생 관리', path: '/students',   icon: Users },
+  {
+    label: '스케줄 관리', path: '/schedules', icon: CalendarDays,
+    children: [
+      { label: '스케줄 설정', path: '/schedules',            icon: BookOpen },
+      { label: '등원 기록',   path: '/schedules/attendance', icon: ClipboardList },
+    ],
+  },
+  {
+    label: '알림톡', path: '/notifications', icon: MessageSquare,
+    children: [
+      { label: '스케줄 알림톡', path: '/notifications/schedule', icon: Eye  },
+      { label: '상벌점 알림톡', path: '/notifications/rewards',  icon: Star },
+    ],
+  },
+]
+
+function getPageTitle(p) {
+  const map = {
+    '/dashboard':              '대시보드',
+    '/students':               '학생 관리',
+    '/schedules':              '스케줄 설정',
+    '/schedules/attendance':   '등원 기록',
+    '/notifications/schedule': '스케줄 알림톡',
+    '/notifications/rewards':  '상벌점 알림톡',
+  }
+  return map[p] || 'SMC 스터디카페'
+}
+
+const S = {
+  active:   { color: '#fff',    background: 'rgba(99,102,241,0.20)' },
+  inactive: { color: '#94A3B8', background: 'transparent' },
+  hover:    { color: '#E2E8F0', background: 'rgba(255,255,255,0.07)' },
+}
+
+function NavLink({ to, isActive, children, style = {}, ...rest }) {
+  return (
+    <Link
+      to={to}
+      style={{ ...(isActive ? S.active : S.inactive), ...style }}
+      onMouseEnter={e => { if (!isActive) Object.assign(e.currentTarget.style, S.hover) }}
+      onMouseLeave={e => { if (!isActive) Object.assign(e.currentTarget.style, S.inactive) }}
+      {...rest}
+    >
+      {children}
+    </Link>
+  )
+}
+
+export default function Layout({ children }) {
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', height:'100vh', width:'100vw', overflow:'hidden' }}>
+
+      <header style={{
+        display:'flex', alignItems:'center', height:`${TOPBAR_H}px`,
+        flexShrink:0, background:'#0F172A',
+        borderBottom:'1px solid rgba(255,255,255,0.07)',
+      }}>
+        <div style={{
+          width:`${SIDEBAR_W}px`, flexShrink:0,
+          display:'flex', alignItems:'center', gap:'12px',
+          padding:'0 20px', height:'100%',
+          borderRight:'1px solid rgba(255,255,255,0.07)',
+        }}>
+          <img src={logoSrc} alt="SMC 로고" style={{
+            width:'38px', height:'auto', mixBlendMode:'screen',
+            filter:'drop-shadow(0 0 10px rgba(184,138,60,0.4))', flexShrink:0,
+          }} />
+          <div>
+            <p style={{ color:'#E2E8F0', fontWeight:700, fontSize:'15px', letterSpacing:'-0.01em', lineHeight:1.2 }}>
+              SMC 스터디카페
+            </p>
+            <p style={{ color:'#475569', fontSize:'11px', marginTop:'2px' }}>관리자 시스템</p>
+          </div>
+        </div>
+
+        <div style={{ flex:1, padding:'0 24px', display:'flex', alignItems:'center', gap:'6px' }}>
+          <span style={{ color:'#334155', fontSize:'12px' }}>SMC</span>
+          <span style={{ color:'#1E293B', fontSize:'12px' }}>›</span>
+          <span style={{ color:'#94A3B8', fontSize:'13px', fontWeight:500 }}>
+            {getPageTitle(location.pathname)}
+          </span>
+        </div>
+
+        <div style={{ display:'flex', alignItems:'center', gap:'10px', padding:'0 20px', flexShrink:0 }}>
+          <div style={{ textAlign:'right' }}>
+            <p style={{ color:'#E2E8F0', fontSize:'13px', fontWeight:600 }}>원장님</p>
+            <p style={{ color:'#475569', fontSize:'10px' }}>관리자</p>
+          </div>
+          <div style={{
+            width:'34px', height:'34px', borderRadius:'50%',
+            background:'linear-gradient(135deg,#6366F1,#8B5CF6)',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            color:'#fff', fontSize:'12px', fontWeight:700, flexShrink:0,
+          }}>관</div>
+        </div>
+      </header>
+
+      <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
+
+        <aside style={{
+          width:`${SIDEBAR_W}px`, flexShrink:0, background:'#0F172A',
+          display:'flex', flexDirection:'column', overflow:'hidden',
+          borderRight:'1px solid rgba(255,255,255,0.05)',
+        }}>
+
+          <div style={{
+            display:'flex', flexDirection:'column', alignItems:'center',
+            padding:'28px 20px 22px', borderBottom:'1px solid rgba(255,255,255,0.07)',
+            flexShrink:0,
+          }}>
+            <img src={logoSrc} alt="SMC" style={{
+              width:'96px', height:'auto', mixBlendMode:'screen',
+              filter:'drop-shadow(0 0 18px rgba(184,138,60,0.35))', display:'block',
+            }} />
+            <p style={{
+              color:'#E2E8F0', fontWeight:700, fontSize:'16px',
+              marginTop:'14px', letterSpacing:'-0.01em', textAlign:'center',
+            }}>SMC 스터디카페</p>
+            <span style={{
+              display:'inline-block', marginTop:'6px', padding:'3px 14px',
+              borderRadius:'999px', fontSize:'11px', fontWeight:600,
+              background:'rgba(99,102,241,0.2)', color:'#818CF8', letterSpacing:'0.04em',
+            }}>관리자 시스템</span>
+          </div>
+
+          <nav style={{ flex:1, padding:'16px 12px', overflowY:'auto', display:'flex', flexDirection:'column', gap:'2px' }}>
+            <p style={{ color:'#334155', fontSize:'10px', fontWeight:700, letterSpacing:'0.1em',
+              padding:'0 12px', marginBottom:'6px', marginTop:'2px' }}>NAVIGATION</p>
+
+            {menuItems.map(item => {
+              const isParent = location.pathname.startsWith(item.path)
+              const isActive = location.pathname === item.path
+
+              if (item.children) {
+                const Icon = item.icon
+                return (
+                  <div key={item.path}>
+                    <NavLink
+                      to={item.children[0].path}
+                      isActive={isParent}
+                      style={{
+                        position:'relative', display:'flex', alignItems:'center',
+                        gap:'12px', padding:'11px 14px', borderRadius:'12px',
+                        fontSize:'14px', fontWeight:500, textDecoration:'none',
+                        transition:'all 0.15s',
+                      }}
+                    >
+                      {isParent && <span style={{
+                        position:'absolute', left:0, top:'50%', transform:'translateY(-50%)',
+                        width:'3px', height:'24px', background:'#818CF8', borderRadius:'0 4px 4px 0',
+                      }} />}
+                      <Icon size={18} strokeWidth={isParent ? 2.2 : 1.8} />
+                      <span style={{ flex:1 }}>{item.label}</span>
+                      {isParent
+                        ? <ChevronDown  size={14} style={{ color:'#64748B' }} />
+                        : <ChevronRight size={14} style={{ color:'#64748B' }} />}
+                    </NavLink>
+
+                    {isParent && (
+                      <div style={{
+                        marginLeft:'20px', marginTop:'2px', marginBottom:'4px',
+                        paddingLeft:'14px', borderLeft:'1px solid rgba(255,255,255,0.08)',
+                        display:'flex', flexDirection:'column', gap:'1px',
+                      }}>
+                        {item.children.map(child => {
+                          const C = child.icon
+                          const isCActive = location.pathname === child.path
+                          return (
+                            <NavLink
+                              key={child.path} to={child.path} isActive={isCActive}
+                              style={{
+                                display:'flex', alignItems:'center', gap:'9px',
+                                padding:'9px 12px', borderRadius:'10px',
+                                fontSize:'13px', fontWeight: isCActive ? 600 : 400,
+                                textDecoration:'none', transition:'all 0.15s',
+                                color: isCActive ? '#A5B4FC' : '#64748B',
+                                background: isCActive ? 'rgba(99,102,241,0.12)' : 'transparent',
+                              }}
+                            >
+                              <C size={14} />
+                              {child.label}
+                            </NavLink>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              }
+
+              return (
+                <NavLink
+                  key={item.path} to={item.path} isActive={isActive}
+                  style={{
+                    position:'relative', display:'flex', alignItems:'center',
+                    gap:'12px', padding:'11px 14px', borderRadius:'12px',
+                    fontSize:'14px', fontWeight:500, textDecoration:'none',
+                    transition:'all 0.15s',
+                  }}
+                >
+                  {isActive && <span style={{
+                    position:'absolute', left:0, top:'50%', transform:'translateY(-50%)',
+                    width:'3px', height:'24px', background:'#818CF8', borderRadius:'0 4px 4px 0',
+                  }} />}
+                  <item.icon size={18} strokeWidth={isActive ? 2.2 : 1.8} />
+                  <span>{item.label}</span>
+                </NavLink>
+              )
+            })}
+          </nav>
+
+          <div style={{ padding:'12px', flexShrink:0, borderTop:'1px solid rgba(255,255,255,0.07)' }}>
+            <button
+              onClick={async () => { await supabase.auth.signOut(); navigate('/login') }}
+              style={{
+                width:'100%', display:'flex', alignItems:'center', gap:'12px',
+                padding:'11px 14px', borderRadius:'12px', fontSize:'14px',
+                color:'#475569', background:'transparent', border:'none', cursor:'pointer',
+                transition:'all 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color='#FCA5A5'; e.currentTarget.style.background='rgba(239,68,68,0.1)' }}
+              onMouseLeave={e => { e.currentTarget.style.color='#475569'; e.currentTarget.style.background='transparent' }}
+            >
+              <LogOut size={18} strokeWidth={1.8} />
+              <span>로그아웃</span>
+            </button>
+          </div>
+        </aside>
+
+        <main style={{ flex:1, overflow:'auto', background:'#F8FAFC' }}>
+          {children}
+        </main>
+      </div>
+    </div>
+  )
+}
