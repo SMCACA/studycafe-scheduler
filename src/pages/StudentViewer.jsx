@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import Layout from '../components/Layout'
 import { createClient } from '@supabase/supabase-js'
-import { Eye, Copy, CheckCheck, MessageSquare, ChevronDown } from 'lucide-react'
+import { Eye, Copy, CheckCheck, MessageSquare, ChevronDown, Loader } from 'lucide-react'
+import { sendNotification } from '../lib/sendNotification' // ✅ 추가
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -31,6 +32,7 @@ export default function StudentViewer() {
   const [selectedId, setSelectedId] = useState('')
   const [loading,    setLoading]    = useState(false)
   const [copied,     setCopied]     = useState(false)
+  const [sending,    setSending]    = useState(false) // ✅ 추가: 발송 중 상태
 
   useEffect(() => { fetchAll() }, [])
 
@@ -58,8 +60,11 @@ export default function StudentViewer() {
   const totalPeriods = activeDays.reduce((sum, d) =>
     sum + (selectedSchedule?.[d.key]?.length || 0), 0)
 
-  const handleCopyText = () => {
-    if (!selectedStudent || !selectedSchedule) return
+  // ──────────────────────────────────────────────
+  // ✅ 추가: 메시지 텍스트를 만드는 함수 (복사/발송 공용)
+  // ──────────────────────────────────────────────
+  const buildMessageText = () => {
+    if (!selectedStudent || !selectedSchedule) return ''
     const lines = [
       `[SMC 스터디카페] 📚`, ``,
       `안녕하세요, ${selectedStudent.parent_name || '학부모님'}!`,
@@ -73,12 +78,48 @@ export default function StudentViewer() {
       }), ``,
       `문의사항은 원으로 연락 주세요 😊`,
     ]
-    navigator.clipboard.writeText(lines.join('\n'))
+    return lines.join('\n')
+  }
+
+  const handleCopyText = () => {
+    if (!selectedStudent || !selectedSchedule) return
+    const text = buildMessageText()
+    navigator.clipboard.writeText(text)
       .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
       .catch(() => alert('복사 실패 – 브라우저 권한을 확인해주세요'))
   }
 
-  // 멤버십 배지 스타일
+  // ──────────────────────────────────────────────
+  // ✅ 추가: 실제 알림톡 발송 함수
+  // ──────────────────────────────────────────────
+  const handleSend = async () => {
+    if (!selectedStudent || !selectedSchedule) return
+    if (!selectedStudent.parent_phone) {
+      alert('❌ 학부모 전화번호가 없습니다!\n\n학생 관리 페이지에서 번호를 먼저 등록해주세요.')
+      return
+    }
+
+    const confirm = window.confirm(
+      `📱 알림톡을 발송할까요?\n\n` +
+      `수신자: ${selectedStudent.parent_name || '학부모님'} (${selectedStudent.parent_phone})\n` +
+      `학생: ${selectedStudent.name}`
+    )
+    if (!confirm) return
+
+    setSending(true)
+    try {
+      await sendNotification({
+        to:   selectedStudent.parent_phone,
+        text: buildMessageText(),
+        type: 'schedule',
+      })
+      alert(`✅ 발송 완료!\n\n${selectedStudent.name} 학생의 학부모님께 알림톡이 전송되었습니다.`)
+    } catch (err) {
+      alert(`❌ 발송 실패\n\n${err.message}`)
+    } finally {
+      setSending(false)
+    }
+  }
   const membershipBadge = (type) => {
     const map = {
       풀:   { bg:'#ECFDF5', color:'#059669', border:'#A7F3D0' },
@@ -299,17 +340,26 @@ export default function StudentViewer() {
                 {copied ? '복사됨!' : '문자 텍스트 복사'}
               </button>
 
+              {/* ✅ 알림톡 발송 버튼 (실제 발송 구현) */}
               <button
-                onClick={() => alert('📱 알림톡 발송 기능은 Solapi 연동 후 구현됩니다!\n\n지금은 "문자 텍스트 복사" 버튼을 이용해주세요 😊')}
+                onClick={handleSend}
+                disabled={sending}
                 style={{
                   display:'flex', alignItems:'center', gap:'7px',
                   padding:'10px 20px', borderRadius:'12px', border:'none',
-                  background:'linear-gradient(135deg,#6366F1,#7C3AED)',
+                  background: sending
+                    ? 'linear-gradient(135deg,#A5B4FC,#C4B5FD)'
+                    : 'linear-gradient(135deg,#6366F1,#7C3AED)',
                   color:'#fff', fontSize:'13px', fontWeight:700,
-                  cursor:'pointer', boxShadow:'0 4px 12px rgba(99,102,241,0.3)',
+                  cursor: sending ? 'not-allowed' : 'pointer',
+                  boxShadow:'0 4px 12px rgba(99,102,241,0.3)',
+                  transition:'all 0.2s',
                 }}
               >
-                <MessageSquare size={15} /> 알림톡 발송
+                {sending
+                  ? <><Loader size={15} /> 발송 중...</>
+                  : <><MessageSquare size={15} /> 알림톡 발송</>
+                }
               </button>
             </div>
           </div>

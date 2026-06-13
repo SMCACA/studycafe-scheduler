@@ -3,8 +3,9 @@ import Layout from '../components/Layout'
 import { createClient } from '@supabase/supabase-js'
 import {
   Star, AlertTriangle, Plus, Trash2, MessageSquare,
-  ChevronDown, Copy, CheckCheck, Edit3, Save, X,
+  ChevronDown, Copy, CheckCheck, Edit3, Save, X, Loader, // ✅ Loader 추가
 } from 'lucide-react'
+import { sendNotification } from '../lib/sendNotification' // ✅ 추가
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -52,6 +53,7 @@ export default function RewardNotification() {
   const [score,            setScore]             = useState('')
   const [loading,          setLoading]           = useState(false)
   const [copied,           setCopied]            = useState(false)
+  const [sending,          setSending]           = useState(false) // ✅ 추가
 
   /* 문구 추가 폼 상태 */
   const [showAddForm, setShowAddForm] = useState(false)
@@ -157,8 +159,36 @@ export default function RewardNotification() {
       .catch(() => alert('복사 실패 – 브라우저 권한을 확인해주세요'))
   }
 
-  const handleSend = () => {
-    alert('📱 알림톡 발송 기능은 Solapi 연동 후 구현됩니다!\n\n지금은 "문자 텍스트 복사" 버튼을 이용해주세요 😊')
+  // ✅ 실제 알림톡 발송 함수 (기존 alert → 실제 발송)
+  const handleSend = async () => {
+    if (!canSend) return
+    if (!selectedStudent.parent_phone) {
+      alert('❌ 학부모 전화번호가 없습니다!\n\n학생 관리 페이지에서 번호를 먼저 등록해주세요.')
+      return
+    }
+
+    const icon = selectedTemplate.type === '상점' ? '⭐' : '⚠️'
+    const confirmed = window.confirm(
+      `📱 알림톡을 발송할까요?\n\n` +
+      `수신자: ${selectedStudent.parent_name || '학부모님'} (${selectedStudent.parent_phone})\n` +
+      `학생: ${selectedStudent.name}\n` +
+      `내용: ${icon} ${selectedTemplate.type} - ${selectedTemplate.title}`
+    )
+    if (!confirmed) return
+
+    setSending(true)
+    try {
+      await sendNotification({
+        to:   selectedStudent.parent_phone,
+        text: getPreviewText(),
+        type: 'reward',
+      })
+      alert(`✅ 발송 완료!\n\n${selectedStudent.name} 학생의 학부모님께 ${selectedTemplate.type} 알림톡이 전송되었습니다.`)
+    } catch (err) {
+      alert(`❌ 발송 실패\n\n${err.message}`)
+    } finally {
+      setSending(false)
+    }
   }
 
   const canSend = selectedStudent && selectedTemplate
@@ -465,19 +495,28 @@ export default function RewardNotification() {
                 {copied ? '복사됨!' : '문자 텍스트 복사'}
               </button>
 
+              {/* ✅ 알림톡 발송 버튼 (실제 발송 구현) */}
               <button
                 onClick={handleSend}
+                disabled={sending}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '7px',
                   padding: '10px 20px', borderRadius: '12px', border: 'none',
-                  background: selectedTemplate.type === '상점'
-                    ? 'linear-gradient(135deg,#F59E0B,#D97706)'
-                    : 'linear-gradient(135deg,#F43F5E,#E11D48)',
+                  background: sending
+                    ? 'linear-gradient(135deg,#FCA5A5,#FDA4AF)'
+                    : selectedTemplate.type === '상점'
+                      ? 'linear-gradient(135deg,#F59E0B,#D97706)'
+                      : 'linear-gradient(135deg,#F43F5E,#E11D48)',
                   color: '#fff', fontSize: '13px', fontWeight: 700,
-                  cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                  cursor: sending ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                  transition: 'all 0.2s',
                 }}
               >
-                <MessageSquare size={15} /> 알림톡 발송
+                {sending
+                  ? <><Loader size={15} /> 발송 중...</>
+                  : <><MessageSquare size={15} /> 알림톡 발송</>
+                }
               </button>
             </div>
           </div>
