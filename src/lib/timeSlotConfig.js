@@ -64,14 +64,13 @@ export async function saveTimeConfig(supabase, config) {
 }
 
 /**
- * 학생 스케줄 공개 링크 생성
- * - 현재 시간 설정을 URL에 포함시켜 로그인 없이 시간표 표시
+ * 시간표 데이터를 URL 파라미터용 문자열로 인코딩 (내부 공통 함수)
  */
-export function buildPublicUrl(student, schedule, timeConfig) {
+function encodeSchedulePayload(student, schedule, timeConfig) {
   const payload = {
-    name: student.name,
-    grade: student.grade || '',
-    seat: student.seat_number ?? schedule?.seat_number ?? '',
+    name:       student.name,
+    grade:      student.grade || '',
+    seat:       student.seat_number ?? schedule?.seat_number ?? '',
     membership: schedule?.membership_type || '',
     slots: {
       mon_slots: schedule?.mon_slots || [],
@@ -84,6 +83,25 @@ export function buildPublicUrl(student, schedule, timeConfig) {
     },
     timeConfig,
   }
-  const encoded = btoa(encodeURIComponent(JSON.stringify(payload)))
+  return btoa(encodeURIComponent(JSON.stringify(payload)))
+}
+
+/**
+ * ✅ [신규] 시간표 PNG 이미지 URL 생성
+ * - 알림톡 버튼 링크에 사용해요
+ * - 링크 클릭 시 → 시간표가 이미지로 바로 표시됨
+ * - 예: https://your-app.vercel.app/api/schedule-image?data=BASE64
+ */
+export function buildImageUrl(student, schedule, timeConfig) {
+  const encoded = encodeSchedulePayload(student, schedule, timeConfig)
+  return `${window.location.origin}/api/schedule-image?data=${encoded}`
+}
+
+/**
+ * 학생 스케줄 공개 링크 생성 (HTML 웹페이지 - 관리자 참고용)
+ * - 현재 시간 설정을 URL에 포함시켜 로그인 없이 시간표 표시
+ */
+export function buildPublicUrl(student, schedule, timeConfig) {
+  const encoded = encodeSchedulePayload(student, schedule, timeConfig)
   return `${window.location.origin}/view?data=${encoded}`
 }

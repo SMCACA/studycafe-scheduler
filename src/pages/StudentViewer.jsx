@@ -3,7 +3,7 @@ import Layout from '../components/Layout'
 import { createClient } from '@supabase/supabase-js'
 import { Eye, Copy, CheckCheck, MessageSquare, ChevronDown, Loader, Link, Clock } from 'lucide-react'
 import { sendNotificationMulti } from '../lib/sendNotification'
-import { loadTimeConfig, buildPublicUrl, DEFAULT_TIME_CONFIG } from '../lib/timeSlotConfig'
+import { loadTimeConfig, buildPublicUrl, buildImageUrl, DEFAULT_TIME_CONFIG } from '../lib/timeSlotConfig'
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -73,15 +73,20 @@ export default function StudentViewer() {
   const totalPeriods = activeDays.reduce((sum, d) =>
     sum + (selectedSchedule?.[d.key]?.length || 0), 0)
 
-  // 공개 링크 생성 (학부모가 시간표를 볼 수 있는 URL)
+  // 관리자 참고용 HTML 웹페이지 링크
   const publicUrl = (selectedStudent && selectedSchedule)
     ? buildPublicUrl(selectedStudent, selectedSchedule, timeConfig)
     : ''
 
+  // ✅ 알림톡 버튼 링크 (클릭 시 시간표 이미지로 바로 보임)
+  const imageUrl = (selectedStudent && selectedSchedule)
+    ? buildImageUrl(selectedStudent, selectedSchedule, timeConfig)
+    : ''
+
   // 링크 복사
   const handleLinkCopy = async () => {
-    if (!publicUrl) return
-    await navigator.clipboard.writeText(publicUrl)
+    if (!imageUrl) return
+    await navigator.clipboard.writeText(imageUrl)
     setLinkCopied(true)
     setTimeout(() => setLinkCopied(false), 2500)
   }
@@ -101,8 +106,8 @@ export default function StudentViewer() {
         const timeLabels = slots.map(p => timeConfig[p] || `${p}교시`)
         return `  ${d.label}: ${timeLabels.join(', ')}`
       }), ``,
-      `📋 시간표 확인 (클릭하여 보기):`,
-      publicUrl, ``,
+      `📋 시간표 확인 (이미지로 열림):`,
+      imageUrl, ``,
       `문의사항은 원으로 연락 주세요 😊`,
     ]
     return lines.join('\n')
@@ -138,10 +143,28 @@ export default function StudentViewer() {
       return
     }
 
+    // ✅ 알림톡 템플릿 변수 (#{변수명} 자리에 들어갈 실제 값들)
+    const variables = (selectedStudent && selectedSchedule) ? {
+      '#{학부모이름}': selectedStudent.parent_name || '학부모님',
+      '#{학생이름}':   selectedStudent.name,
+      '#{좌석번호}':   String(selectedStudent.seat_number ?? selectedSchedule?.seat_number ?? '미지정'),
+      '#{멤버십}':     selectedSchedule?.membership_type || '–',
+      '#{총교시}':     String(totalPeriods),
+      '#{시간표링크}': imageUrl,
+    } : undefined
+
+    // ✅ 알림톡 버튼 (시간표 이미지 링크 버튼)
+    const buttons = imageUrl ? [{
+      buttonType: 'WL',              // WL = Web Link (웹 링크 버튼 유형)
+      buttonName: '📅 시간표 확인하기',
+      linkMo: imageUrl,              // 모바일에서 클릭 시 열릴 URL
+      linkPc: imageUrl,              // PC에서 클릭 시 열릴 URL
+    }] : undefined
+
     setSending(true)
     setSendResult(null)
     try {
-      await sendNotificationMulti({ targets, text, type:'schedule' })
+      await sendNotificationMulti({ targets, text, type:'schedule', variables, buttons })
       setSendResult({ ok:true, msg:`📨 ${targets.map(t=>t.label).join(', ')}에게 발송 완료!` })
     } catch (err) {
       setSendResult({ ok:false, msg:`발송 실패: ${err.message}` })
@@ -299,12 +322,12 @@ export default function StudentViewer() {
                 borderRadius:'12px', padding:'12px 14px', marginBottom:'12px',
               }}>
                 <p style={{ fontSize:'11px', fontWeight:700, color:'#92400E', marginBottom:'8px' }}>
-                  🔗 학부모 시간표 링크
+                  🖼️ 알림톡 시간표 이미지 링크
                 </p>
                 <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
                   <input
                     readOnly
-                    value={publicUrl}
+                    value={imageUrl}
                     style={{
                       flex:1, padding:'7px 10px', borderRadius:'8px', fontSize:'11px',
                       border:'1px solid #FDE68A', background:'#fff', color:'#64748B',
@@ -324,7 +347,7 @@ export default function StudentViewer() {
                   </button>
                 </div>
                 <p style={{ fontSize:'10px', color:'#D97706', marginTop:'6px' }}>
-                  💡 이 링크를 알림톡 메시지에 포함하거나 별도로 공유할 수 있어요
+                  💡 이 링크 클릭 시 시간표 이미지가 바로 보여요 (알림톡 버튼에 자동 포함)
                 </p>
               </div>
 
