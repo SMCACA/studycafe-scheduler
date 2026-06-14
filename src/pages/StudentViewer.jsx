@@ -150,7 +150,7 @@ export default function StudentViewer() {
       '#{좌석번호}':   String(selectedStudent.seat_number ?? selectedSchedule?.seat_number ?? '미지정'),
       '#{멤버십}':     selectedSchedule?.membership_type || '–',
       '#{총교시}':     String(totalPeriods),
-      '#{시간표링크}': imageUrl,
+      '#{시간표링크}': imageUrl.replace('https://', ''),
     } : undefined
 
     // ✅ 알림톡 버튼 (시간표 이미지 링크 버튼)
