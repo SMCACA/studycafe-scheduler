@@ -1,0 +1,1 @@
+curl -L "https://github.com/google/fonts/raw/main/ofl/notosanskr/NotoSansKR-Regular.ttf" -o public/fonts/NotoSansKR.ttf

@@ -1,12 +1,8 @@
 // ================================================================
 // 📁 api/schedule-image.js
-// Node.js 런타임용 - 이미지를 직접 전송하는 방식
 // ================================================================
 
 import { ImageResponse } from '@vercel/og'
-
-// edge 설정 제거 → Node.js 런타임으로 동작
-// (Vercel이 자동으로 Node.js 선택했으므로 맞춰줌)
 
 const DAY_KEYS = [
   { key: 'mon_slots', label: '월', weekend: false },
@@ -24,7 +20,6 @@ const MS_COLOR = {
   '주말': { bg: '#FEF3C7', color: '#B45309' },
 }
 
-// JSX 없이 화면 구성하는 헬퍼
 const h = (type, props, ...children) => {
   const flat = children.flat().filter(c => c !== null && c !== undefined && c !== false && c !== '')
   return {
@@ -39,23 +34,19 @@ const h = (type, props, ...children) => {
   }
 }
 
-async function loadFont() {
+// ✅ 폰트를 public/fonts/ 에서 로드 (TTF 형식)
+async function loadFont(req) {
   try {
-    const [kor, lat] = await Promise.all([
-      fetch('https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-kr@5.0.22/files/noto-sans-kr-korean-400-normal.woff').then(r => r.arrayBuffer()),
-      fetch('https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-kr@5.0.22/files/noto-sans-kr-latin-400-normal.woff').then(r => r.arrayBuffer()),
-    ])
-    return [
-      { name: 'NotoKR', data: kor, weight: 400, style: 'normal' },
-      { name: 'NotoKR', data: lat, weight: 400, style: 'normal' },
-    ]
+    const origin = `https://${req.headers.host}`
+    const res = await fetch(`${origin}/fonts/NotoSansKR.ttf`)
+    const data = await res.arrayBuffer()
+    return [{ name: 'NotoKR', data, weight: 400, style: 'normal' }]
   } catch (e) {
     console.error('폰트 로드 실패:', e.message)
     return []
   }
 }
 
-// ── Node.js 방식 핸들러: (req, res) 형태 ──
 export default async function handler(req, res) {
   const url = new URL(req.url, `https://${req.headers.host}`)
   const raw = url.searchParams.get('data')
@@ -74,7 +65,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const fonts = await loadFont()
+    const fonts = await loadFont(req)  // ✅ req 전달
 
     const {
       name       = '학생',
@@ -111,17 +102,25 @@ export default async function handler(req, res) {
         fontFamily: fonts.length > 0 ? 'NotoKR, sans-serif' : 'sans-serif',
       },
     },
-      // 헤더
+
+      // ── 헤더 ──
       h('div', {
-        style: { display: 'flex', flexDirection: 'column', justifyContent: 'center', height: 96, padding: '0 40px', background: '#0F172A' },
+        style: {
+          display: 'flex', flexDirection: 'column', justifyContent: 'center',
+          height: 96, padding: '0 40px', background: '#0F172A',
+        },
       },
         h('div', { style: { color: '#94A3B8', fontSize: 13, marginBottom: 5 } }, 'SMC 스터디카페'),
         h('div', { style: { color: '#FFFFFF', fontSize: 22, fontWeight: 700 } }, '등원 스케줄 안내'),
       ),
 
-      // 학생 카드
+      // ── 학생 카드 ──
       h('div', {
-        style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 100, margin: `16px ${PAD}px 0`, padding: '0 24px', background: '#FFFFFF', borderRadius: 18 },
+        style: {
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          height: 100, margin: `16px ${PAD}px 0`, padding: '0 24px',
+          background: '#FFFFFF', borderRadius: 18,
+        },
       },
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: 7 } },
           h('div', { style: { fontSize: 30, fontWeight: 900, color: '#0F172A', lineHeight: 1 } }, name),
@@ -132,45 +131,104 @@ export default async function handler(req, res) {
           ),
         ),
         membership ? h('div', {
-          style: { padding: '8px 20px', borderRadius: 999, background: ms.bg, color: ms.color, fontSize: 14, fontWeight: 700 },
+          style: {
+            padding: '8px 20px', borderRadius: 999,
+            background: ms.bg, color: ms.color, fontSize: 14, fontWeight: 700,
+          },
         }, `${membership} 멤버십`) : null,
       ),
 
-      // 섹션 타이틀
-      h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, height: 56, padding: `0 ${PAD + 8}px` } },
+      // ── 섹션 타이틀 ──
+      h('div', {
+        style: { display: 'flex', alignItems: 'center', gap: 10, height: 56, padding: `0 ${PAD + 8}px` },
+      },
         h('div', { style: { fontSize: 16, fontWeight: 700, color: '#1E293B' } }, '주간 등원 시간표'),
-        h('div', { style: { padding: '3px 10px', borderRadius: 999, background: '#FED7AA', color: '#92400E', fontSize: 11, fontWeight: 700 } }, '등원 = 주황색 칸'),
+        h('div', {
+          style: {
+            padding: '3px 10px', borderRadius: 999,
+            background: '#FED7AA', color: '#92400E', fontSize: 11, fontWeight: 700,
+          },
+        }, '등원 = 주황색 칸'),
       ),
 
-      // 시간표 그리드
-      h('div', { style: { display: 'flex', flexDirection: 'column', margin: `0 ${PAD}px`, background: '#FFFFFF', borderRadius: 18, overflow: 'hidden' } },
-        // 요일 헤더
+      // ── 시간표 그리드 ──
+      h('div', {
+        style: {
+          display: 'flex', flexDirection: 'column',
+          margin: `0 ${PAD}px`, background: '#FFFFFF', borderRadius: 18, overflow: 'hidden',
+        },
+      },
+
+        // 요일 헤더 행
         h('div', { style: { display: 'flex', background: '#F8FAFC', borderBottom: '2px solid #E2E8F0' } },
-          h('div', { style: { width: COL_T, height: ROW_H, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#94A3B8', borderRight: '1px solid #E2E8F0' } }, '시간'),
+          h('div', {
+            style: {
+              width: COL_T, height: ROW_H, display: 'flex',
+              alignItems: 'center', justifyContent: 'center',
+              fontSize: 12, fontWeight: 700, color: '#94A3B8',
+              borderRight: '1px solid #E2E8F0',
+            },
+          }, '시간'),
           ...activeDays.map((day, i) =>
-            h('div', { key: day.key, style: { width: COL_D, height: ROW_H, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 800, color: day.label === '일' ? '#EF4444' : day.weekend ? '#D97706' : '#1E293B', borderRight: i < activeDays.length - 1 ? '1px solid #E2E8F0' : 'none' } }, day.label)
+            h('div', {
+              key: day.key,
+              style: {
+                width: COL_D, height: ROW_H, display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+                fontSize: 16, fontWeight: 800,
+                color: day.label === '일' ? '#EF4444' : day.weekend ? '#D97706' : '#1E293B',
+                borderRight: i < activeDays.length - 1 ? '1px solid #E2E8F0' : 'none',
+              },
+            }, day.label)
           ),
         ),
-        // 교시 행
+
+        // 교시별 행
         ...periods.map((period, ri) =>
-          h('div', { key: `row-${period}`, style: { display: 'flex', borderBottom: ri < periods.length - 1 ? '1px solid #F1F5F9' : 'none' } },
-            h('div', { style: { width: COL_T, height: ROW_H, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F8FAFC', fontSize: 11, color: '#64748B', borderRight: '1px solid #E2E8F0', textAlign: 'center', padding: '0 4px' } }, timeConfig[period] || `${period}교시`),
+          h('div', {
+            key: `row-${period}`,
+            style: { display: 'flex', borderBottom: ri < periods.length - 1 ? '1px solid #F1F5F9' : 'none' },
+          },
+            h('div', {
+              style: {
+                width: COL_T, height: ROW_H, display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+                background: '#F8FAFC', fontSize: 11, color: '#64748B',
+                borderRight: '1px solid #E2E8F0', textAlign: 'center', padding: '0 4px',
+              },
+            }, timeConfig[period] || `${period}교시`),
+
             ...activeDays.map((day, ci) => {
               const on = Array.isArray(slots[day.key]) && slots[day.key].includes(period)
-              return h('div', { key: `${day.key}-${period}`, style: { width: COL_D, height: ROW_H, display: 'flex', alignItems: 'center', justifyContent: 'center', background: on ? '#FED7AA' : '#FFFFFF', fontSize: 13, fontWeight: on ? 800 : 400, color: on ? '#92400E' : '#E2E8F0', borderRight: ci < activeDays.length - 1 ? '1px solid #F1F5F9' : 'none' } }, on ? '등원' : '-')
+              return h('div', {
+                key: `${day.key}-${period}`,
+                style: {
+                  width: COL_D, height: ROW_H, display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                  background: on ? '#FED7AA' : '#FFFFFF',
+                  fontSize: 13, fontWeight: on ? 800 : 400,
+                  color: on ? '#92400E' : '#E2E8F0',
+                  borderRight: ci < activeDays.length - 1 ? '1px solid #F1F5F9' : 'none',
+                },
+              }, on ? '등원' : '-')
             }),
           )
         ),
       ),
 
-      // 푸터
-      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 60, padding: `0 ${PAD + 8}px`, marginTop: 20 } },
+      // ── 푸터 ──
+      h('div', {
+        style: {
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          height: 60, padding: `0 ${PAD + 8}px`, marginTop: 20,
+        },
+      },
         h('div', { style: { fontSize: 12, color: '#94A3B8' } }, '문의사항은 원으로 연락 주세요'),
         h('div', { style: { fontSize: 11, color: '#CBD5E1' } }, date),
       ),
     )
 
-    // ✅ Node.js 방식: ImageResponse를 버퍼로 변환 후 직접 전송
+    // ✅ Node.js 방식: 버퍼로 변환 후 직접 전송
     const imageResponse = new ImageResponse(element, { width: W, height: H, fonts })
     const buffer = await imageResponse.arrayBuffer()
 
