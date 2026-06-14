@@ -53,7 +53,8 @@ export default function RewardNotification() {
   const [score,            setScore]             = useState('')
   const [loading,          setLoading]           = useState(false)
   const [copied,           setCopied]            = useState(false)
-  const [sending,          setSending]           = useState(false) // ✅ 추가
+  const [sending,          setSending]           = useState(false)
+  const [recipient,        setRecipient]         = useState('parent') // 'parent' | 'student'
 
   /* 문구 추가 폼 상태 */
   const [showAddForm, setShowAddForm] = useState(false)
@@ -62,13 +63,17 @@ export default function RewardNotification() {
   const [formTitle,   setFormTitle]   = useState('')
   const [formContent, setFormContent] = useState('')
 
-  /* ─ 학생 목록 불러오기 (useCallback = 함수를 "변하지 않는 고정 함수"로 만들어줌) ─ */
+  /* ─ 학생 목록 불러오기 (재원생만) ─ */
   const fetchStudents = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase.from('students').select('*').order('name')
+    const { data } = await supabase
+      .from('students')
+      .select('*')
+      .eq('status', '재원생')
+      .order('name')
     if (data) setStudents(data)
     setLoading(false)
-  }, [])  // 빈 배열 = 컴포넌트가 처음 만들어질 때 한 번만 생성
+  }, [])
 
   /* ─ 초기 로드 ─ */
   useEffect(() => {
@@ -135,10 +140,13 @@ export default function RewardNotification() {
     const date = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })
     const icon = selectedTemplate.type === '상점' ? '⭐' : '⚠️'
     const sign = selectedTemplate.type === '상점' ? '+' : '-'
+    const recipientName = recipient === 'parent'
+      ? (selectedStudent.parent_name || '학부모님')
+      : `${selectedStudent.name} 학생`
     const lines = [
       `[SMC 스터디카페] ${icon} ${selectedTemplate.type} 알림`,
       '',
-      `안녕하세요, ${selectedStudent.parent_name || '학부모님'}!`,
+      `안녕하세요, ${recipientName}!`,
       `${selectedStudent.name} 학생의 ${selectedTemplate.type} 알림을 드립니다.`,
       '',
       `📌 사유: ${selectedTemplate.title}`,
@@ -159,18 +167,29 @@ export default function RewardNotification() {
       .catch(() => alert('복사 실패 – 브라우저 권한을 확인해주세요'))
   }
 
-  // ✅ 실제 알림톡 발송 함수 (기존 alert → 실제 발송)
+  // ✅ 실제 알림톡 발송 함수
   const handleSend = async () => {
     if (!canSend) return
-    if (!selectedStudent.parent_phone) {
-      alert('❌ 학부모 전화번호가 없습니다!\n\n학생 관리 페이지에서 번호를 먼저 등록해주세요.')
+
+    const targetPhone = recipient === 'parent'
+      ? selectedStudent.parent_phone
+      : selectedStudent.phone
+
+    if (!targetPhone) {
+      const who = recipient === 'parent' ? '학부모 전화번호' : '학생 전화번호'
+      alert(`❌ ${who}가 없습니다!\n\n학생 관리 페이지에서 번호를 먼저 등록해주세요.`)
       return
     }
 
     const icon = selectedTemplate.type === '상점' ? '⭐' : '⚠️'
+    const recipientLabel = recipient === 'parent'
+      ? `${selectedStudent.parent_name || '학부모님'} (학부모)`
+      : `${selectedStudent.name} (학생 본인)`
+
     const confirmed = window.confirm(
       `📱 알림톡을 발송할까요?\n\n` +
-      `수신자: ${selectedStudent.parent_name || '학부모님'} (${selectedStudent.parent_phone})\n` +
+      `수신자: ${recipientLabel}\n` +
+      `연락처: ${targetPhone}\n` +
       `학생: ${selectedStudent.name}\n` +
       `내용: ${icon} ${selectedTemplate.type} - ${selectedTemplate.title}`
     )
@@ -179,11 +198,11 @@ export default function RewardNotification() {
     setSending(true)
     try {
       await sendNotification({
-        to:   selectedStudent.parent_phone,
+        to:   targetPhone,
         text: getPreviewText(),
         type: 'reward',
       })
-      alert(`✅ 발송 완료!\n\n${selectedStudent.name} 학생의 학부모님께 ${selectedTemplate.type} 알림톡이 전송되었습니다.`)
+      alert(`✅ 발송 완료!\n\n${recipientLabel}께 ${selectedTemplate.type} 알림톡이 전송되었습니다.`)
     } catch (err) {
       alert(`❌ 발송 실패\n\n${err.message}`)
     } finally {
@@ -253,6 +272,39 @@ export default function RewardNotification() {
             <p style={{ marginTop: '8px', fontSize: '12px', color: '#64748B' }}>
               📞 학부모 연락처: <strong>{selectedStudent.parent_phone}</strong>
             </p>
+          )}
+          {/* ✅ 수신 대상 선택 (학생 선택 후 표시) */}
+          {selectedStudent && (
+            <div style={{ marginTop: '12px' }}>
+              <p style={{ fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '8px' }}>
+                📤 수신 대상
+              </p>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {[
+                  { value: 'parent',  label: '👨‍👩‍👧 학부모', phone: selectedStudent.parent_phone },
+                  { value: 'student', label: '🧑‍🎓 학생 본인', phone: selectedStudent.phone },
+                ].map(({ value, label, phone }) => (
+                  <button
+                    key={value}
+                    onClick={() => setRecipient(value)}
+                    style={{
+                      display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+                      padding: '10px 16px', borderRadius: '12px', cursor: 'pointer',
+                      border: recipient === value ? '2px solid #6366F1' : '1.5px solid #E2E8F0',
+                      background: recipient === value ? '#EEF2FF' : '#FAFBFF',
+                      transition: 'all 0.15s', minWidth: '140px',
+                    }}
+                  >
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: recipient === value ? '#4F46E5' : '#374151' }}>
+                      {label}
+                    </span>
+                    <span style={{ fontSize: '11px', color: phone ? '#64748B' : '#EF4444', marginTop: '2px' }}>
+                      {phone || '번호 없음'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
         </StepCard>
 

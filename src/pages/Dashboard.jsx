@@ -52,20 +52,22 @@ export default function Dashboard() {
   const fetchAll = async () => {
     setLoading(true)
     try {
-      // ① 전체 학생 + 학년 분포
+      // ① 재원생만 + 학년 분포
       const { data: stuData } = await supabase
         .from('students')
-        .select('id, name, grade, seat_number, school')
+        .select('id, name, grade, seat_number, school, status')
+        .eq('status', '재원생')
         .order('name')
 
       const stuList = stuData || []
       setStudents(stuList)
 
-      // ② 오늘 등원 예정 — schedules 에서 오늘 요일 슬롯 확인
+      // ② 오늘 등원 예정 — schedules 에서 오늘 요일 슬롯 확인 (재원생만)
       const todaySlotKey = DAY_SLOT_KEYS[new Date().getDay()]
       const { data: schData } = await supabase
         .from('schedules')
-        .select(`student_id, ${todaySlotKey}, students(name, seat_number)`)
+        .select(`student_id, ${todaySlotKey}, students!inner(name, seat_number, status)`)
+        .eq('students.status', '재원생')
 
       const todaySchedules = (schData || []).filter(s => {
         const slots = s[todaySlotKey]
@@ -247,7 +249,7 @@ export default function Dashboard() {
               ) : (
                 <>
                   <p style={{ fontSize:'12px', fontWeight:700, color:'#64748B', marginBottom:'14px' }}>
-                    총 {students.length}명 재원 중
+                    재원생 총 {students.length}명
                   </p>
                   <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
                     {gradeDist.map(({ grade, count }) => {

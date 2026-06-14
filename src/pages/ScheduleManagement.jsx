@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import Layout from '../components/Layout'
 import { createClient } from '@supabase/supabase-js'
-import { X, Trash2, Settings, CalendarDays, Users } from 'lucide-react'
+import { X, Trash2, Settings, CalendarDays, Users, Archive } from 'lucide-react'
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -40,7 +40,6 @@ const EMPTY_FORM = {
   thu_slots:[], fri_slots:[], sat_slots:[], sun_slots:[],
 }
 
-// ── 멤버십 배지 색상 ──────────────────────────────────────
 const MEMBERSHIP_STYLE = {
   풀:   { bg:'#ECFDF5', color:'#059669', border:'#A7F3D0' },
   평일: { bg:'#EEF2FF', color:'#4F46E5', border:'#C7D2FE' },
@@ -48,17 +47,23 @@ const MEMBERSHIP_STYLE = {
 }
 
 export default function ScheduleManagement() {
-  const [students,       setStudents]       = useState([])
-  const [schedules,      setSchedules]      = useState([])
-  const [loading,        setLoading]        = useState(false)
-  const [isModalOpen,    setIsModalOpen]    = useState(false)
-  const [editingSchedule,setEditingSchedule]= useState(null)
-  const [selectedStudent,setSelectedStudent]= useState(null)
-  const [form,           setForm]           = useState({ ...EMPTY_FORM })
-  const [isConfigOpen,   setIsConfigOpen]   = useState(false)
-  const [slotConfig,     setSlotConfig]     = useState(loadSlotConfig)
-  const [tempConfig,     setTempConfig]     = useState(loadSlotConfig)
-  const [toast,          setToast]          = useState(null)
+  const [students,            setStudents]            = useState([])
+  const [schedules,           setSchedules]           = useState([])
+  const [loading,             setLoading]             = useState(false)
+  const [isModalOpen,         setIsModalOpen]         = useState(false)
+  const [editingSchedule,     setEditingSchedule]     = useState(null)
+  const [selectedStudent,     setSelectedStudent]     = useState(null)
+  const [form,                setForm]                = useState({ ...EMPTY_FORM })
+  const [isConfigOpen,        setIsConfigOpen]        = useState(false)
+  const [slotConfig,          setSlotConfig]          = useState(loadSlotConfig)
+  const [tempConfig,          setTempConfig]          = useState(loadSlotConfig)
+  const [toast,               setToast]               = useState(null)
+  // ── 예비 스케줄 상태 ──────────────────────────────────
+  const [activeTab,           setActiveTab]           = useState('current')
+  const [backupSets,          setBackupSets]          = useState([])
+  const [backupLoading,       setBackupLoading]       = useState(false)
+  const [backupName,          setBackupName]          = useState('')
+  const [showBackupNameInput, setShowBackupNameInput] = useState(false)
 
   const dayConfig = useMemo(() =>
     DAY_KEYS.map(d => ({ ...d, slots: slotConfig[d.cfgKey] || 5 })), [slotConfig])
@@ -70,12 +75,14 @@ export default function ScheduleManagement() {
 
   const fetchAll = async () => {
     setLoading(true)
-    const [{ data: sts }, { data: schs }] = await Promise.all([
-      supabase.from('students').select('*').order('name'),
+    const [{ data: sts }, { data: schs }, { data: bsets }] = await Promise.all([
+      supabase.from('students').select('*').eq('status', '재원생').order('name'),
       supabase.from('schedules').select('*'),
+      supabase.from('schedule_sets').select('*').order('created_at', { ascending: false }),
     ])
-    if (sts)  setStudents(sts)
-    if (schs) setSchedules(schs)
+    if (sts)   setStudents(sts)
+    if (schs)  setSchedules(schs)
+    if (bsets) setBackupSets(bsets)
     setLoading(false)
   }
 
@@ -167,336 +174,533 @@ export default function ScheduleManagement() {
     setTempConfig(c => ({ ...c, [cfgKey]: Math.min(20, Math.max(1, (c[cfgKey]||5)+delta)) }))
   }
 
-  // ── 공통 th/td 테두리 스타일 ────────────────────────────
+  // ── 예비 스케줄: 현재 스케줄 저장 ──────────────────────
+  const handleSaveBackup = async () => {
+    if (!backupName.trim()) { showToast('이름을 입력해주세요', 'error'); return }
+    setBackupLoading(true)
+    try {
+      const { data: setData, error } = await supabase
+        .from('schedule_sets')
+        .insert({ name: backupName.trim() })
+        .select().single()
+      if (error) throw error
+
+      const items = schedules.map(s => ({
+        set_id:          setData.id,
+        student_id:      s.student_id,
+        seat_number:     s.seat_number,
+        membership_type: s.membership_type,
+        mon_slots: s.mon_slots || [], tue_slots: s.tue_slots || [],
+        wed_slots: s.wed_slots || [], thu_slots: s.thu_slots || [],
+        fri_slots: s.fri_slots || [], sat_slots: s.sat_slots || [],
+        sun_slots: s.sun_slots || [],
+      }))
+      if (items.length > 0) {
+        const { error: ie } = await supabase.from('schedule_set_items').insert(items)
+        if (ie) throw ie
+      }
+      showToast(`"${backupName}" 예비 스케줄로 저장됐어요 💾`)
+      setBackupName('')
+      setShowBackupNameInput(false)
+      fetchAll()
+    } catch (err) { showToast(`저장 실패: ${err.message}`, 'error') }
+    finally { setBackupLoading(false) }
+  }
+
+  // ── 예비 스케줄: 현재로 불러오기 ─────────────────────────
+  const handleLoadBackup = async (setId, setName) => {
+    if (!window.confirm(`"${setName}" 예비 스케줄을 불러올까요?\n현재 스케줄이 이 내용으로 교체됩니다.\n\n현재 스케줄을 먼저 저장해두지 않으셨다면 취소 후 저장 먼저 해주세요.`)) return
+    setBackupLoading(true)
+    try {
+      const { data: items, error } = await supabase
+        .from('schedule_set_items').select('*').eq('set_id', setId)
+      if (error) throw error
+      for (const item of items) {
+        const existing = schedules.find(s => s.student_id === item.student_id)
+        const payload = {
+          student_id:      item.student_id,
+          seat_number:     item.seat_number,
+          membership_type: item.membership_type,
+          mon_slots: item.mon_slots || [], tue_slots: item.tue_slots || [],
+          wed_slots: item.wed_slots || [], thu_slots: item.thu_slots || [],
+          fri_slots: item.fri_slots || [], sat_slots: item.sat_slots || [],
+          sun_slots: item.sun_slots || [],
+        }
+        if (existing) {
+          await supabase.from('schedules').update(payload).eq('id', existing.id)
+        } else {
+          await supabase.from('schedules').insert(payload)
+        }
+      }
+      showToast(`"${setName}" 예비 스케줄을 불러왔어요 ✅`)
+      fetchAll()
+    } catch (err) { showToast(`불러오기 실패: ${err.message}`, 'error') }
+    finally { setBackupLoading(false) }
+  }
+
+  // ── 예비 스케줄: 삭제 ────────────────────────────────────
+  const handleDeleteBackup = async (setId, setName) => {
+    if (!window.confirm(`"${setName}" 예비 스케줄을 삭제할까요?`)) return
+    const { error } = await supabase.from('schedule_sets').delete().eq('id', setId)
+    if (error) showToast('삭제 실패: ' + error.message, 'error')
+    else { showToast(`"${setName}" 삭제 완료`); fetchAll() }
+  }
+
   const cellBorder = '1px solid #E2E8F0'
 
   return (
     <Layout>
       <div style={{ padding:'28px 32px' }}>
 
-        {/* ── 페이지 헤더 ── */}
-        <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:'24px' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:'14px' }}>
-            <div style={{
-              width:'46px', height:'46px', borderRadius:'14px',
-              background:'#EEF2FF', display:'flex', alignItems:'center', justifyContent:'center',
-            }}>
-              <CalendarDays size={22} style={{ color:'#6366F1' }} />
-            </div>
-            <div>
-              <h1 style={{ fontSize:'22px', fontWeight:700, color:'#0F172A', margin:0 }}>스케줄 관리</h1>
-              <p style={{ fontSize:'13px', color:'#94A3B8', marginTop:'3px' }}>학생 행을 클릭하면 스케줄을 설정할 수 있어요</p>
-            </div>
-          </div>
-
-          <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
-            {/* 통계 뱃지 */}
-            <div style={{
-              display:'flex', alignItems:'center', gap:'8px',
-              padding:'8px 16px', borderRadius:'12px',
-              background:'#fff', border:'1px solid #E2E8F0',
-            }}>
-              <Users size={14} style={{ color:'#94A3B8' }} />
-              <span style={{ fontSize:'13px', color:'#64748B' }}>
-                등록 <strong style={{ color:'#0F172A' }}>{schedules.length}</strong>
-                {' / '}전체 <strong style={{ color:'#0F172A' }}>{students.length}</strong>명
-              </span>
-            </div>
-            {/* 교시 설정 버튼 */}
-            <button
-              onClick={openConfig}
-              style={{
-                display:'flex', alignItems:'center', gap:'8px',
-                padding:'10px 18px', borderRadius:'12px',
-                background:'#fff', border:'1px solid #E2E8F0',
-                fontSize:'13px', fontWeight:600, color:'#475569', cursor:'pointer',
-                transition:'all 0.15s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor='#6366F1'; e.currentTarget.style.color='#6366F1' }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor='#E2E8F0'; e.currentTarget.style.color='#475569' }}
-            >
-              <Settings size={15} /> 교시 설정
-            </button>
-          </div>
-        </div>
-
-        {/* ── 범례 ── */}
-        <div style={{
-          display:'flex', alignItems:'center', gap:'16px',
-          marginBottom:'16px', padding:'10px 16px',
-          background:'#fff', borderRadius:'12px', border:'1px solid #E2E8F0',
-        }}>
-          <span style={{ fontSize:'12px', color:'#94A3B8', fontWeight:600 }}>범례</span>
+        {/* ── 탭 버튼 ── */}
+        <div style={{ display:'flex', gap:'4px', marginBottom:'20px', background:'#F1F5F9', borderRadius:'14px', padding:'4px', width:'fit-content' }}>
           {[
-            { label:'출석 예정', bg:'#EEF2FF', color:'#6366F1', text:'○' },
-            { label:'주말 출석', bg:'#FFF7ED', color:'#D97706', text:'○' },
-          ].map(({ label, bg, color, text }) => (
-            <span key={label} style={{ display:'flex', alignItems:'center', gap:'6px', fontSize:'12px', color:'#64748B' }}>
-              <span style={{
-                width:'20px', height:'20px', borderRadius:'6px', background:bg,
-                display:'flex', alignItems:'center', justifyContent:'center',
-                fontSize:'12px', fontWeight:700, color,
-              }}>{text}</span>
-              {label}
-            </span>
+            { key:'current', label:'📋 현재 스케줄' },
+            { key:'backup',  label:'💾 예비 스케줄 관리' },
+          ].map(tab => (
+            <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
+              padding:'8px 20px', borderRadius:'10px', fontSize:'13px', fontWeight:600,
+              cursor:'pointer', border:'none', transition:'all 0.15s',
+              background: activeTab === tab.key ? '#fff'     : 'transparent',
+              color:       activeTab === tab.key ? '#6366F1' : '#64748B',
+              boxShadow:   activeTab === tab.key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+            }}>{tab.label}</button>
           ))}
-          <span style={{ display:'flex', alignItems:'center', gap:'6px', fontSize:'12px', color:'#64748B' }}>
-            <span style={{
-              width:'20px', height:'20px', borderRadius:'6px',
-              background:'#1E293B', display:'flex', alignItems:'center',
-              justifyContent:'center', fontSize:'9px', color:'#64748B', fontWeight:600,
-            }}>✕</span>
-            회원권 외 요일
-          </span>
-          <span style={{ marginLeft:'auto', fontSize:'12px', color:'#6366F1', fontWeight:600 }}>
-            💡 행 클릭 → 스케줄 편집
-          </span>
         </div>
 
-        {/* ── 메인 테이블 ── */}
-        {loading ? (
-          <div style={{ textAlign:'center', padding:'64px 0', color:'#94A3B8', fontSize:'14px' }}>
-            불러오는 중...
+        {/* ════════════════════════════════════════
+            현재 스케줄 탭
+        ════════════════════════════════════════ */}
+        {activeTab === 'current' && (<>
+
+          {/* ── 페이지 헤더 ── */}
+          <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:'24px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'14px' }}>
+              <div style={{
+                width:'46px', height:'46px', borderRadius:'14px',
+                background:'#EEF2FF', display:'flex', alignItems:'center', justifyContent:'center',
+              }}>
+                <CalendarDays size={22} style={{ color:'#6366F1' }} />
+              </div>
+              <div>
+                <h1 style={{ fontSize:'22px', fontWeight:700, color:'#0F172A', margin:0 }}>스케줄 관리</h1>
+                <p style={{ fontSize:'13px', color:'#94A3B8', marginTop:'3px' }}>학생 행을 클릭하면 스케줄을 설정할 수 있어요</p>
+              </div>
+            </div>
+
+            <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
+              <div style={{
+                display:'flex', alignItems:'center', gap:'8px',
+                padding:'8px 16px', borderRadius:'12px',
+                background:'#fff', border:'1px solid #E2E8F0',
+              }}>
+                <Users size={14} style={{ color:'#94A3B8' }} />
+                <span style={{ fontSize:'13px', color:'#64748B' }}>
+                  등록 <strong style={{ color:'#0F172A' }}>{schedules.length}</strong>
+                  {' / '}전체 <strong style={{ color:'#0F172A' }}>{students.length}</strong>명
+                </span>
+              </div>
+              <button
+                onClick={openConfig}
+                style={{
+                  display:'flex', alignItems:'center', gap:'8px',
+                  padding:'10px 18px', borderRadius:'12px',
+                  background:'#fff', border:'1px solid #E2E8F0',
+                  fontSize:'13px', fontWeight:600, color:'#475569', cursor:'pointer',
+                  transition:'all 0.15s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor='#6366F1'; e.currentTarget.style.color='#6366F1' }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor='#E2E8F0'; e.currentTarget.style.color='#475569' }}
+              >
+                <Settings size={15} /> 교시 설정
+              </button>
+            </div>
           </div>
-        ) : (
+
+          {/* ── 범례 ── */}
           <div style={{
-            background:'#fff', borderRadius:'16px',
-            border:'1px solid #E2E8F0',
-            boxShadow:'0 1px 4px rgba(0,0,0,0.04)',
-            overflowX:'auto',
+            display:'flex', alignItems:'center', gap:'16px',
+            marginBottom:'16px', padding:'10px 16px',
+            background:'#fff', borderRadius:'12px', border:'1px solid #E2E8F0',
           }}>
-            <table style={{
-              width:'100%', borderCollapse:'collapse',
-              fontSize:'12px', minWidth:'1000px',
+            <span style={{ fontSize:'12px', color:'#94A3B8', fontWeight:600 }}>범례</span>
+            {[
+              { label:'출석 예정', bg:'#EEF2FF', color:'#6366F1', text:'○' },
+              { label:'주말 출석', bg:'#FFF7ED', color:'#D97706', text:'○' },
+            ].map(({ label, bg, color, text }) => (
+              <span key={label} style={{ display:'flex', alignItems:'center', gap:'6px', fontSize:'12px', color:'#64748B' }}>
+                <span style={{
+                  width:'20px', height:'20px', borderRadius:'6px', background:bg,
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  fontSize:'12px', fontWeight:700, color,
+                }}>{text}</span>
+                {label}
+              </span>
+            ))}
+            <span style={{ display:'flex', alignItems:'center', gap:'6px', fontSize:'12px', color:'#64748B' }}>
+              <span style={{
+                width:'20px', height:'20px', borderRadius:'6px',
+                background:'#1E293B', display:'flex', alignItems:'center',
+                justifyContent:'center', fontSize:'9px', color:'#64748B', fontWeight:600,
+              }}>✕</span>
+              회원권 외 요일
+            </span>
+            <span style={{ marginLeft:'auto', fontSize:'12px', color:'#6366F1', fontWeight:600 }}>
+              💡 행 클릭 → 스케줄 편집
+            </span>
+          </div>
+
+          {/* ── 메인 테이블 ── */}
+          {loading ? (
+            <div style={{ textAlign:'center', padding:'64px 0', color:'#94A3B8', fontSize:'14px' }}>
+              불러오는 중...
+            </div>
+          ) : (
+            <div style={{
+              background:'#fff', borderRadius:'16px',
+              border:'1px solid #E2E8F0',
+              boxShadow:'0 1px 4px rgba(0,0,0,0.04)',
+              overflowX:'auto',
             }}>
-
-              {/* ── 헤드 1행: 요일 대헤더 ── */}
-              <thead>
-                <tr>
-                  {/* 고정 컬럼 헤더들 */}
-                  {[
-                    { label:'구분',  w:60,  left:0   },
-                    { label:'좌석',  w:48,  left:60  },
-                    { label:'이름',  w:80,  left:108 },
-                    { label:'학년',  w:56,  left:188 },
-                  ].map(({ label, w, left }) => (
-                    <th key={label} rowSpan={2} style={{
-                      position:'sticky', left:`${left}px`, zIndex:20,
-                      background:'#F8FAFC', minWidth:`${w}px`, width:`${w}px`,
-                      border:cellBorder, padding:'10px 8px',
-                      fontSize:'11px', fontWeight:700, color:'#64748B',
-                      letterSpacing:'0.04em', textAlign:'center',
-                      boxShadow: left === 188 ? '4px 0 8px rgba(0,0,0,0.06)' : 'none',
-                    }}>{label}</th>
-                  ))}
-
-                  {/* 요일별 헤더 */}
-                  {dayConfig.map(day => (
-                    <th key={day.key} colSpan={day.slots} style={{
-                      border:cellBorder, padding:'8px 4px',
-                      textAlign:'center', fontSize:'12px', fontWeight:700,
-                      background: day.type === 'weekend' ? '#FFF1F2' : '#EEF2FF',
-                      color:       day.type === 'weekend' ? '#E11D48'  : '#4F46E5',
-                    }}>
-                      {day.label}요일
-                      <span style={{ marginLeft:'4px', fontSize:'10px', fontWeight:400, opacity:0.65 }}>
-                        ({day.slots}교시)
-                      </span>
-                    </th>
-                  ))}
-
-                  <th rowSpan={2} style={{
-                    background:'#F8FAFC', border:cellBorder,
-                    padding:'10px 8px', minWidth:'44px',
-                    fontSize:'11px', fontWeight:700, color:'#94A3B8', letterSpacing:'0.04em',
-                  }}>삭제</th>
-                </tr>
-
-                {/* ── 헤드 2행: 교시 번호 ── */}
-                <tr>
-                  {dayConfig.map(day =>
-                    Array.from({ length: day.slots }, (_, i) => (
-                      <th key={`${day.key}-${i}`} style={{
-                        border:cellBorder, padding:'5px 2px',
-                        textAlign:'center', width:'28px',
-                        fontSize:'10px', fontWeight:500, color:'#94A3B8',
-                        background: day.type === 'weekend' ? '#FFF8F8' : '#F5F8FF',
-                      }}>
-                        {i + 1}
-                      </th>
-                    ))
-                  )}
-                </tr>
-              </thead>
-
-              {/* ── 바디 ── */}
-              <tbody>
-                {students.length === 0 ? (
+              <table style={{
+                width:'100%', borderCollapse:'collapse',
+                fontSize:'12px', minWidth:'1000px',
+              }}>
+                <thead>
                   <tr>
-                    <td colSpan={4 + totalSlots + 1} style={{
-                      textAlign:'center', padding:'64px 0',
-                      color:'#94A3B8', fontSize:'14px', border:cellBorder,
-                    }}>
-                      등록된 학생이 없어요.<br />
-                      먼저 학생 관리에서 학생을 추가해 주세요.
-                    </td>
+                    {[
+                      { label:'구분',  w:60,  left:0   },
+                      { label:'좌석',  w:48,  left:60  },
+                      { label:'이름',  w:80,  left:108 },
+                      { label:'학년',  w:56,  left:188 },
+                    ].map(({ label, w, left }) => (
+                      <th key={label} rowSpan={2} style={{
+                        position:'sticky', left:`${left}px`, zIndex:20,
+                        background:'#F8FAFC', minWidth:`${w}px`, width:`${w}px`,
+                        border:cellBorder, padding:'10px 8px',
+                        fontSize:'11px', fontWeight:700, color:'#64748B',
+                        letterSpacing:'0.04em', textAlign:'center',
+                        boxShadow: left === 188 ? '4px 0 8px rgba(0,0,0,0.06)' : 'none',
+                      }}>{label}</th>
+                    ))}
+                    {dayConfig.map(day => (
+                      <th key={day.key} colSpan={day.slots} style={{
+                        border:cellBorder, padding:'8px 4px',
+                        textAlign:'center', fontSize:'12px', fontWeight:700,
+                        background: day.type === 'weekend' ? '#FFF1F2' : '#EEF2FF',
+                        color:       day.type === 'weekend' ? '#E11D48'  : '#4F46E5',
+                      }}>
+                        {day.label}요일
+                        <span style={{ marginLeft:'4px', fontSize:'10px', fontWeight:400, opacity:0.65 }}>
+                          ({day.slots}교시)
+                        </span>
+                      </th>
+                    ))}
+                    <th rowSpan={2} style={{
+                      background:'#F8FAFC', border:cellBorder,
+                      padding:'10px 8px', minWidth:'44px',
+                      fontSize:'11px', fontWeight:700, color:'#94A3B8', letterSpacing:'0.04em',
+                    }}>삭제</th>
                   </tr>
-                ) : (
-                  students.map((student, rowIdx) => {
-                    const schedule = getSchedule(student.id)
-                    const rowBg = rowIdx % 2 === 0 ? '#fff' : '#FAFBFF'
-
-                    return (
-                      <tr
-                        key={student.id}
-                        onClick={() => handleRowClick(student)}
-                        style={{ cursor:'pointer' }}
-                        onMouseEnter={e => { e.currentTarget.style.background='#F0F4FF' }}
-                        onMouseLeave={e => { e.currentTarget.style.background=rowBg }}
-                      >
-
-                        {/* 구분 (멤버십 배지) — sticky */}
-                        <td style={{
-                          position:'sticky', left:0, zIndex:10,
-                          background:rowBg, border:cellBorder,
-                          padding:'8px 6px', textAlign:'center',
+                  <tr>
+                    {dayConfig.map(day =>
+                      Array.from({ length: day.slots }, (_, i) => (
+                        <th key={`${day.key}-${i}`} style={{
+                          border:cellBorder, padding:'5px 2px',
+                          textAlign:'center', width:'28px',
+                          fontSize:'10px', fontWeight:500, color:'#94A3B8',
+                          background: day.type === 'weekend' ? '#FFF8F8' : '#F5F8FF',
                         }}>
-                          {schedule ? (() => {
-                            const s = MEMBERSHIP_STYLE[schedule.membership_type] || MEMBERSHIP_STYLE['풀']
-                            return (
-                              <span style={{
-                                padding:'2px 8px', borderRadius:'999px', fontSize:'10px', fontWeight:700,
-                                background:s.bg, color:s.color, border:`1px solid ${s.border}`,
-                                whiteSpace:'nowrap',
-                              }}>
-                                {schedule.membership_type}
+                          {i + 1}
+                        </th>
+                      ))
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {students.length === 0 ? (
+                    <tr>
+                      <td colSpan={4 + totalSlots + 1} style={{
+                        textAlign:'center', padding:'64px 0',
+                        color:'#94A3B8', fontSize:'14px', border:cellBorder,
+                      }}>
+                        등록된 학생이 없어요.<br />
+                        먼저 학생 관리에서 학생을 추가해 주세요.
+                      </td>
+                    </tr>
+                  ) : (
+                    students.map((student, rowIdx) => {
+                      const schedule = getSchedule(student.id)
+                      const rowBg = rowIdx % 2 === 0 ? '#fff' : '#FAFBFF'
+                      return (
+                        <tr
+                          key={student.id}
+                          onClick={() => handleRowClick(student)}
+                          style={{ cursor:'pointer' }}
+                          onMouseEnter={e => { e.currentTarget.style.background='#F0F4FF' }}
+                          onMouseLeave={e => { e.currentTarget.style.background=rowBg }}
+                        >
+                          {/* 구분 (멤버십 배지) */}
+                          <td style={{
+                            position:'sticky', left:0, zIndex:10,
+                            background:rowBg, border:cellBorder,
+                            padding:'8px 6px', textAlign:'center',
+                          }}>
+                            {schedule ? (() => {
+                              const s = MEMBERSHIP_STYLE[schedule.membership_type] || MEMBERSHIP_STYLE['풀']
+                              return (
+                                <span style={{
+                                  padding:'2px 8px', borderRadius:'999px', fontSize:'10px', fontWeight:700,
+                                  background:s.bg, color:s.color, border:`1px solid ${s.border}`,
+                                  whiteSpace:'nowrap',
+                                }}>
+                                  {schedule.membership_type}
+                                </span>
+                              )
+                            })() : (
+                              <span style={{ fontSize:'10px', color:'#6366F1', fontWeight:600, textDecoration:'underline', textDecorationStyle:'dotted' }}>
+                                클릭
                               </span>
-                            )
-                          })() : (
-                            <span style={{ fontSize:'10px', color:'#6366F1', fontWeight:600, textDecoration:'underline', textDecorationStyle:'dotted' }}>
-                              클릭
-                            </span>
-                          )}
-                        </td>
-
-                        {/* 좌석 — sticky */}
-                        <td style={{
-                          position:'sticky', left:60, zIndex:10,
-                          background:rowBg, border:cellBorder,
-                          padding:'8px 6px', textAlign:'center',
-                          fontWeight:700, fontSize:'13px', color:'#374151', fontFamily:'monospace',
-                        }}>
-                          {schedule?.seat_number
-                            ? <span style={{
-                                display:'inline-flex', alignItems:'center', justifyContent:'center',
-                                width:'26px', height:'26px', borderRadius:'8px',
-                                background:'#EEF2FF', color:'#6366F1', fontSize:'12px', fontWeight:700,
-                              }}>{schedule.seat_number}</span>
-                            : <span style={{ color:'#CBD5E1' }}>–</span>
-                          }
-                        </td>
-
-                        {/* 이름 — sticky */}
-                        <td style={{
-                          position:'sticky', left:108, zIndex:10,
-                          background:rowBg, border:cellBorder,
-                          padding:'8px 10px', fontWeight:700, color:'#0F172A',
-                          whiteSpace:'nowrap', fontSize:'13px',
-                        }}>
-                          {student.name}
-                        </td>
-
-                        {/* 학년 — sticky + 오른쪽 그림자 */}
-                        <td style={{
-                          position:'sticky', left:188, zIndex:10,
-                          background:rowBg, border:cellBorder,
-                          padding:'8px 8px', whiteSpace:'nowrap',
-                          boxShadow:'4px 0 8px rgba(0,0,0,0.06)',
-                        }}>
-                          {student.grade && (
-                            <span style={{
-                              padding:'1px 8px', borderRadius:'999px', fontSize:'10px', fontWeight:700,
-                              background: student.grade.startsWith('고') ? '#EEF2FF' : '#ECFDF5',
-                              color:      student.grade.startsWith('고') ? '#4F46E5' : '#059669',
-                            }}>
-                              {student.grade}
-                            </span>
-                          )}
-                        </td>
-
-                        {/* 시간표 슬롯 */}
-                        {schedule ? (
-                          dayConfig.map(day => {
-                            const avail = isDayAvailable(schedule.membership_type, day.type)
-                            if (!avail) {
-                              return (
-                                <td key={day.key} colSpan={day.slots} style={{
-                                  border:cellBorder, textAlign:'center',
-                                  background:'#1E293B', height:'36px',
-                                }}>
-                                  <span style={{ fontSize:'9px', color:'#475569', fontWeight:600, letterSpacing:'0.05em' }}>✕</span>
-                                </td>
-                              )
+                            )}
+                          </td>
+                          {/* 좌석 */}
+                          <td style={{
+                            position:'sticky', left:60, zIndex:10,
+                            background:rowBg, border:cellBorder,
+                            padding:'8px 6px', textAlign:'center',
+                            fontWeight:700, fontSize:'13px', color:'#374151', fontFamily:'monospace',
+                          }}>
+                            {schedule?.seat_number
+                              ? <span style={{
+                                  display:'inline-flex', alignItems:'center', justifyContent:'center',
+                                  width:'26px', height:'26px', borderRadius:'8px',
+                                  background:'#EEF2FF', color:'#6366F1', fontSize:'12px', fontWeight:700,
+                                }}>{schedule.seat_number}</span>
+                              : <span style={{ color:'#CBD5E1' }}>–</span>
                             }
-                            return Array.from({ length: day.slots }, (_, i) => {
-                              const n = i + 1
-                              const active = (schedule[day.key] || []).includes(n)
-                              return (
-                                <td key={`${day.key}-${n}`} style={{
-                                  border:cellBorder, textAlign:'center', width:'28px', height:'36px',
-                                  background: active
-                                    ? (day.type === 'weekend' ? '#FFF7ED' : '#EEF2FF')
-                                    : 'transparent',
-                                  verticalAlign:'middle',
-                                }}>
-                                  {active && (
-                                    <span style={{
-                                      display:'inline-flex', alignItems:'center', justifyContent:'center',
-                                      width:'18px', height:'18px', borderRadius:'50%',
-                                      background: day.type === 'weekend' ? '#F59E0B' : '#6366F1',
-                                      fontSize:'9px', fontWeight:900, color:'#fff',
-                                    }}>●</span>
-                                  )}
-                                </td>
-                              )
+                          </td>
+                          {/* 이름 */}
+                          <td style={{
+                            position:'sticky', left:108, zIndex:10,
+                            background:rowBg, border:cellBorder,
+                            padding:'8px 10px', fontWeight:700, color:'#0F172A',
+                            whiteSpace:'nowrap', fontSize:'13px',
+                          }}>
+                            {student.name}
+                          </td>
+                          {/* 학년 */}
+                          <td style={{
+                            position:'sticky', left:188, zIndex:10,
+                            background:rowBg, border:cellBorder,
+                            padding:'8px 8px', whiteSpace:'nowrap',
+                            boxShadow:'4px 0 8px rgba(0,0,0,0.06)',
+                          }}>
+                            {student.grade && (
+                              <span style={{
+                                padding:'1px 8px', borderRadius:'999px', fontSize:'10px', fontWeight:700,
+                                background: student.grade.startsWith('고') ? '#EEF2FF' : '#ECFDF5',
+                                color:      student.grade.startsWith('고') ? '#4F46E5' : '#059669',
+                              }}>
+                                {student.grade}
+                              </span>
+                            )}
+                          </td>
+                          {/* 시간표 슬롯 */}
+                          {schedule ? (
+                            dayConfig.map(day => {
+                              const avail = isDayAvailable(schedule.membership_type, day.type)
+                              if (!avail) {
+                                return (
+                                  <td key={day.key} colSpan={day.slots} style={{
+                                    border:cellBorder, textAlign:'center',
+                                    background:'#1E293B', height:'36px',
+                                  }}>
+                                    <span style={{ fontSize:'9px', color:'#475569', fontWeight:600, letterSpacing:'0.05em' }}>✕</span>
+                                  </td>
+                                )
+                              }
+                              return Array.from({ length: day.slots }, (_, i) => {
+                                const n = i + 1
+                                const active = (schedule[day.key] || []).includes(n)
+                                return (
+                                  <td key={`${day.key}-${n}`} style={{
+                                    border:cellBorder, textAlign:'center', width:'28px', height:'36px',
+                                    background: active
+                                      ? (day.type === 'weekend' ? '#FFF7ED' : '#EEF2FF')
+                                      : 'transparent',
+                                    verticalAlign:'middle',
+                                  }}>
+                                    {active && (
+                                      <span style={{
+                                        display:'inline-flex', alignItems:'center', justifyContent:'center',
+                                        width:'18px', height:'18px', borderRadius:'50%',
+                                        background: day.type === 'weekend' ? '#F59E0B' : '#6366F1',
+                                        fontSize:'9px', fontWeight:900, color:'#fff',
+                                      }}>●</span>
+                                    )}
+                                  </td>
+                                )
+                              })
                             })
-                          })
-                        ) : (
-                          dayConfig.flatMap(day =>
-                            Array.from({ length: day.slots }, (_, i) => (
-                              <td key={`${day.key}-e-${i}`} style={{
-                                border:cellBorder, width:'28px', height:'36px',
-                                background: day.type === 'weekend' ? '#FFFBFA' : '#FAFBFF',
-                              }} />
-                            ))
-                          )
-                        )}
-
-                        {/* 삭제 버튼 */}
-                        <td style={{ border:cellBorder, textAlign:'center', padding:'4px' }}>
-                          {schedule && (
-                            <button
-                              onClick={e => handleDelete(e, schedule.id)}
-                              style={{
-                                padding:'4px 6px', borderRadius:'8px', border:'none',
-                                background:'transparent', cursor:'pointer',
-                                color:'#FCA5A5', transition:'all 0.15s',
-                              }}
-                              onMouseEnter={e => { e.currentTarget.style.background='#FEF2F2'; e.currentTarget.style.color='#EF4444' }}
-                              onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.color='#FCA5A5' }}
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                          ) : (
+                            dayConfig.flatMap(day =>
+                              Array.from({ length: day.slots }, (_, i) => (
+                                <td key={`${day.key}-e-${i}`} style={{
+                                  border:cellBorder, width:'28px', height:'36px',
+                                  background: day.type === 'weekend' ? '#FFFBFA' : '#FAFBFF',
+                                }} />
+                              ))
+                            )
                           )}
-                        </td>
-                      </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            </table>
+                          {/* 삭제 버튼 */}
+                          <td style={{ border:cellBorder, textAlign:'center', padding:'4px' }}>
+                            {schedule && (
+                              <button
+                                onClick={e => handleDelete(e, schedule.id)}
+                                style={{
+                                  padding:'4px 6px', borderRadius:'8px', border:'none',
+                                  background:'transparent', cursor:'pointer',
+                                  color:'#FCA5A5', transition:'all 0.15s',
+                                }}
+                                onMouseEnter={e => { e.currentTarget.style.background='#FEF2F2'; e.currentTarget.style.color='#EF4444' }}
+                                onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.color='#FCA5A5' }}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>)}
+
+        {/* ════════════════════════════════════════
+            예비 스케줄 탭
+        ════════════════════════════════════════ */}
+        {activeTab === 'backup' && (
+          <div>
+            {/* 저장 박스 */}
+            <div style={{
+              background:'#fff', borderRadius:'16px', border:'1px solid #E2E8F0',
+              padding:'24px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.04)',
+            }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'12px' }}>
+                <Archive size={18} style={{ color:'#6366F1' }} />
+                <h3 style={{ fontSize:'15px', fontWeight:700, color:'#0F172A', margin:0 }}>현재 스케줄을 예비로 저장</h3>
+              </div>
+              <p style={{ fontSize:'13px', color:'#64748B', marginBottom:'16px', lineHeight:1.7 }}>
+                현재 등록된 <strong style={{ color:'#0F172A' }}>모든 학생의 스케줄</strong>을 이름 붙여 저장합니다.<br />
+                나중에 불러오기 버튼으로 현재 스케줄과 교체할 수 있어요.
+              </p>
+              {showBackupNameInput ? (
+                <div style={{ display:'flex', gap:'10px', alignItems:'center' }}>
+                  <input
+                    value={backupName}
+                    onChange={e => setBackupName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSaveBackup() }}
+                    placeholder="예) 2025년 여름방학 스케줄"
+                    autoFocus
+                    style={{
+                      flex:1, padding:'10px 14px', borderRadius:'10px',
+                      border:'1.5px solid #6366F1', outline:'none', fontSize:'13px',
+                      boxShadow:'0 0 0 3px rgba(99,102,241,0.1)',
+                    }}
+                  />
+                  <button onClick={handleSaveBackup} disabled={backupLoading} style={{
+                    padding:'10px 20px', borderRadius:'10px', border:'none',
+                    background:'linear-gradient(135deg,#6366F1,#7C3AED)',
+                    color:'#fff', fontSize:'13px', fontWeight:700, cursor:'pointer',
+                    opacity: backupLoading ? 0.6 : 1,
+                  }}>
+                    {backupLoading ? '저장 중…' : '저장'}
+                  </button>
+                  <button onClick={() => { setShowBackupNameInput(false); setBackupName('') }} style={{
+                    padding:'10px 14px', borderRadius:'10px', border:'1.5px solid #E2E8F0',
+                    background:'#fff', fontSize:'13px', color:'#64748B', cursor:'pointer',
+                  }}>취소</button>
+                </div>
+              ) : (
+                <button onClick={() => setShowBackupNameInput(true)} style={{
+                  display:'flex', alignItems:'center', gap:'8px',
+                  padding:'10px 20px', borderRadius:'12px',
+                  border:'1.5px solid #6366F1', background:'#EEF2FF',
+                  color:'#6366F1', fontSize:'13px', fontWeight:700, cursor:'pointer',
+                }}>
+                  + 현재 스케줄 저장하기
+                </button>
+              )}
+            </div>
+
+            {/* 저장된 목록 */}
+            <h3 style={{ fontSize:'15px', fontWeight:700, color:'#0F172A', marginBottom:'14px' }}>
+              📁 저장된 예비 스케줄 ({backupSets.length}개)
+            </h3>
+
+            {backupSets.length === 0 ? (
+              <div style={{
+                textAlign:'center', padding:'64px',
+                background:'#fff', borderRadius:'16px', border:'1px solid #E2E8F0',
+              }}>
+                <p style={{ fontSize:'40px', marginBottom:'12px' }}>💾</p>
+                <p style={{ fontWeight:600, color:'#64748B', fontSize:'15px' }}>저장된 예비 스케줄이 없어요</p>
+                <p style={{ fontSize:'13px', color:'#94A3B8', marginTop:'4px' }}>위에서 현재 스케줄을 먼저 저장해보세요</p>
+              </div>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
+                {backupSets.map(bset => (
+                  <div key={bset.id} style={{
+                    display:'flex', alignItems:'center', justifyContent:'space-between',
+                    padding:'18px 22px', borderRadius:'14px',
+                    background:'#fff', border:'1.5px solid #E2E8F0',
+                    boxShadow:'0 1px 4px rgba(0,0,0,0.04)',
+                  }}>
+                    <div>
+                      <p style={{ fontSize:'15px', fontWeight:700, color:'#0F172A', margin:0 }}>{bset.name}</p>
+                      <p style={{ fontSize:'12px', color:'#94A3B8', margin:'4px 0 0' }}>
+                        저장일: {new Date(bset.created_at).toLocaleDateString('ko-KR', {
+                          year:'numeric', month:'long', day:'numeric',
+                          hour:'2-digit', minute:'2-digit',
+                        })}
+                      </p>
+                    </div>
+                    <div style={{ display:'flex', gap:'8px' }}>
+                      <button
+                        onClick={() => handleLoadBackup(bset.id, bset.name)}
+                        disabled={backupLoading}
+                        style={{
+                          display:'flex', alignItems:'center', gap:'6px',
+                          padding:'8px 16px', borderRadius:'10px',
+                          border:'1.5px solid #059669', background:'#ECFDF5',
+                          color:'#059669', fontSize:'12px', fontWeight:700,
+                          cursor: backupLoading ? 'not-allowed' : 'pointer',
+                          opacity: backupLoading ? 0.6 : 1,
+                        }}
+                      >⬆️ 불러오기</button>
+                      <button
+                        onClick={() => handleDeleteBackup(bset.id, bset.name)}
+                        disabled={backupLoading}
+                        style={{
+                          display:'flex', alignItems:'center', gap:'6px',
+                          padding:'8px 16px', borderRadius:'10px',
+                          border:'1.5px solid #FECACA', background:'#FEF2F2',
+                          color:'#EF4444', fontSize:'12px', fontWeight:700,
+                          cursor: backupLoading ? 'not-allowed' : 'pointer',
+                          opacity: backupLoading ? 0.6 : 1,
+                        }}
+                      >🗑️ 삭제</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
+
       </div>
 
       {/* ═══════════════════════════════════════════
@@ -513,8 +717,6 @@ export default function ScheduleManagement() {
             maxHeight:'90vh', overflowY:'auto',
             boxShadow:'0 20px 60px rgba(0,0,0,0.15)',
           }}>
-
-            {/* 헤더 */}
             <div style={{
               position:'sticky', top:0, background:'#fff',
               borderBottom:'1px solid #F1F5F9', padding:'20px 24px 16px',
@@ -542,20 +744,16 @@ export default function ScheduleManagement() {
             </div>
 
             <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:'18px' }}>
-
               {/* 학생 정보 카드 */}
-              <div style={{
-                background:'#F8FAFF', borderRadius:'14px', padding:'16px',
-                border:'1px solid #E0E7FF',
-              }}>
+              <div style={{ background:'#F8FAFF', borderRadius:'14px', padding:'16px', border:'1px solid #E0E7FF' }}>
                 <p style={{ fontSize:'11px', fontWeight:700, color:'#6366F1', marginBottom:'12px', letterSpacing:'0.04em' }}>
                   👤 학생 정보
                 </p>
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px' }}>
                   {[
-                    { label:'이름',      val:selectedStudent.name,          big:true },
-                    { label:'학년',      val:selectedStudent.grade || '–' },
-                    { label:'학교',      val:selectedStudent.school || '–' },
+                    { label:'이름',        val:selectedStudent.name,          big:true },
+                    { label:'학년',        val:selectedStudent.grade || '–' },
+                    { label:'학교',        val:selectedStudent.school || '–' },
                     { label:'학생 연락처', val:selectedStudent.student_phone || '–' },
                     { label:'학부모 연락처', val:selectedStudent.parent_phone || '–' },
                   ].map(({ label, val, big }) => (

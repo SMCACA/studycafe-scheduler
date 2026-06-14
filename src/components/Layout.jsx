@@ -4,6 +4,7 @@ import logoSrc from '../assets/smc_logo.png'
 import {
   LayoutDashboard, Users, CalendarDays, MessageSquare,
   LogOut, ChevronDown, ChevronRight, ClipboardList, Eye, BookOpen, Star,
+  UserCheck,  // ✅ 직원 아이콘
 } from 'lucide-react'
 
 const SIDEBAR_W = 400
@@ -26,6 +27,7 @@ const menuItems = [
       { label: '상벌점 알림톡', path: '/notifications/rewards',  icon: Star },
     ],
   },
+  { label: '직원 근무표', path: '/staff', icon: UserCheck }, // ✅ 신규
 ]
 
 function getPageTitle(p) {
@@ -36,6 +38,7 @@ function getPageTitle(p) {
     '/schedules/attendance':   '등원 기록',
     '/notifications/schedule': '스케줄 알림톡',
     '/notifications/rewards':  '상벌점 알림톡',
+    '/staff':                  '직원 근무표',
   }
   return map[p] || 'SMC 스터디카페'
 }
