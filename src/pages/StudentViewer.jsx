@@ -93,24 +93,17 @@ export default function StudentViewer() {
 
   const buildMessageText = () => {
     if (!selectedStudent || !selectedSchedule) return ''
-    const lines = [
-      `[SMC 스터디카페] 📚`, ``,
-      `안녕하세요, ${selectedStudent.parent_name || '학부모님'}!`,
-      `${selectedStudent.name} 학생의 등원 스케줄을 안내드립니다.`, ``,
+    return [
+      `[SMC 스터디카페]`,
+      `📚 안녕하세요, SMC 관리형 스터디카페입니다.`,
+      `${selectedStudent.name} 학생의 등원 시간표를 안내드립니다.`,
       `▶ 좌석번호: ${selectedStudent.seat_number ?? (selectedSchedule.seat_number || '미지정')}번`,
-      `▶ 멤버십: ${selectedSchedule.membership_type || '–'}`, ``,
-      `📅 주간 스케줄`,
-      ...activeDays.map(d => {
-        const slots = (selectedSchedule[d.key] || []).sort((a, b) => a - b)
-        // 교시 번호를 시간 라벨로 변환 (예: 2교시 → 오전 10시)
-        const timeLabels = slots.map(p => timeConfig[p] || `${p}교시`)
-        return `  ${d.label}: ${timeLabels.join(', ')}`
-      }), ``,
-      `📋 시간표 확인 (이미지로 열림):`,
-      imageUrl, ``,
-      `문의사항은 원으로 연락 주세요 😊`,
-    ]
-    return lines.join('\n')
+      `▶ 멤버십: ${selectedSchedule.membership_type || '–'}`,
+      ``,
+      `아래 버튼을 눌러 시간표를 확인해 주세요 📅`,
+      ``,
+      `문의사항은 010-6748-2577으로 연락 주세요 😊`,
+    ].join('\n')
   }
 
   const handleCopy = async () => {
@@ -150,7 +143,7 @@ export default function StudentViewer() {
       '#{좌석번호}':   String(selectedStudent.seat_number ?? selectedSchedule?.seat_number ?? '미지정'),
       '#{멤버십}':     selectedSchedule?.membership_type || '–',
       '#{총교시}':     String(totalPeriods),
-      '#{시간표링크}': imageUrl.replace('https://', ''),
+      '#{시간표링크}': imageUrl,
     } : undefined
 
     // ✅ 알림톡 버튼 (시간표 이미지 링크 버튼)
@@ -174,20 +167,7 @@ export default function StudentViewer() {
     }
   }
 
-  const buildMessageText = () => {
-  if (!selectedStudent || !selectedSchedule) return ''
-  return [
-    `[SMC 스터디카페]`,
-    `📚 안녕하세요, SMC 관리형 스터디카페입니다.`,
-    `${selectedStudent.name} 학생의 등원 시간표를 안내드립니다.`,
-    `▶ 좌석번호: ${selectedStudent.seat_number ?? selectedSchedule?.seat_number ?? '미지정'}번`,
-    `▶ 멤버십: ${selectedSchedule?.membership_type || '–'}`,
-    ``,
-    `아래 버튼을 눌러 시간표를 확인해 주세요 📅`,
-    ``,
-    `문의사항은 010-6748-2577으로 연락 주세요 😊`,
-  ].join('\n')
-}
+  const msgText = buildMessageText()
 
   return (
     <Layout>
