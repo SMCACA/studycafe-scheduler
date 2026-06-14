@@ -34,11 +34,15 @@ const h = (type, props, ...children) => {
   }
 }
 
-// ✅ 폰트를 public/fonts/ 에서 로드 (TTF 형식)
+// ✅ res.ok 체크 추가 - 404 응답을 폰트로 착각하는 버그 방지
 async function loadFont(req) {
   try {
     const origin = `https://${req.headers.host}`
     const res = await fetch(`${origin}/fonts/NotoSansKR.ttf`)
+    if (!res.ok) {
+      console.error('폰트 파일 없음:', res.status)
+      return []
+    }
     const data = await res.arrayBuffer()
     return [{ name: 'NotoKR', data, weight: 400, style: 'normal' }]
   } catch (e) {
@@ -65,7 +69,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const fonts = await loadFont(req)  // ✅ req 전달
+    const fonts = await loadFont(req)
 
     const {
       name       = '학생',
@@ -140,7 +144,10 @@ export default async function handler(req, res) {
 
       // ── 섹션 타이틀 ──
       h('div', {
-        style: { display: 'flex', alignItems: 'center', gap: 10, height: 56, padding: `0 ${PAD + 8}px` },
+        style: {
+          display: 'flex', alignItems: 'center', gap: 10,
+          height: 56, padding: `0 ${PAD + 8}px`,
+        },
       },
         h('div', { style: { fontSize: 16, fontWeight: 700, color: '#1E293B' } }, '주간 등원 시간표'),
         h('div', {
@@ -155,12 +162,15 @@ export default async function handler(req, res) {
       h('div', {
         style: {
           display: 'flex', flexDirection: 'column',
-          margin: `0 ${PAD}px`, background: '#FFFFFF', borderRadius: 18, overflow: 'hidden',
+          margin: `0 ${PAD}px`, background: '#FFFFFF',
+          borderRadius: 18, overflow: 'hidden',
         },
       },
 
         // 요일 헤더 행
-        h('div', { style: { display: 'flex', background: '#F8FAFC', borderBottom: '2px solid #E2E8F0' } },
+        h('div', {
+          style: { display: 'flex', background: '#F8FAFC', borderBottom: '2px solid #E2E8F0' },
+        },
           h('div', {
             style: {
               width: COL_T, height: ROW_H, display: 'flex',
@@ -176,7 +186,9 @@ export default async function handler(req, res) {
                 width: COL_D, height: ROW_H, display: 'flex',
                 alignItems: 'center', justifyContent: 'center',
                 fontSize: 16, fontWeight: 800,
-                color: day.label === '일' ? '#EF4444' : day.weekend ? '#D97706' : '#1E293B',
+                color: day.label === '일' ? '#EF4444'
+                     : day.weekend        ? '#D97706'
+                     :                      '#1E293B',
                 borderRight: i < activeDays.length - 1 ? '1px solid #E2E8F0' : 'none',
               },
             }, day.label)
@@ -187,17 +199,23 @@ export default async function handler(req, res) {
         ...periods.map((period, ri) =>
           h('div', {
             key: `row-${period}`,
-            style: { display: 'flex', borderBottom: ri < periods.length - 1 ? '1px solid #F1F5F9' : 'none' },
+            style: {
+              display: 'flex',
+              borderBottom: ri < periods.length - 1 ? '1px solid #F1F5F9' : 'none',
+            },
           },
+            // 시간 라벨
             h('div', {
               style: {
                 width: COL_T, height: ROW_H, display: 'flex',
                 alignItems: 'center', justifyContent: 'center',
                 background: '#F8FAFC', fontSize: 11, color: '#64748B',
-                borderRight: '1px solid #E2E8F0', textAlign: 'center', padding: '0 4px',
+                borderRight: '1px solid #E2E8F0',
+                textAlign: 'center', padding: '0 4px',
               },
             }, timeConfig[period] || `${period}교시`),
 
+            // 요일별 셀
             ...activeDays.map((day, ci) => {
               const on = Array.isArray(slots[day.key]) && slots[day.key].includes(period)
               return h('div', {
@@ -228,7 +246,7 @@ export default async function handler(req, res) {
       ),
     )
 
-    // ✅ Node.js 방식: 버퍼로 변환 후 직접 전송
+    // Node.js 방식: 버퍼로 변환 후 직접 전송
     const imageResponse = new ImageResponse(element, { width: W, height: H, fonts })
     const buffer = await imageResponse.arrayBuffer()
 
