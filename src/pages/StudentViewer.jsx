@@ -174,7 +174,20 @@ export default function StudentViewer() {
     }
   }
 
-  const msgText = buildMessageText()
+  const buildMessageText = () => {
+  if (!selectedStudent || !selectedSchedule) return ''
+  return [
+    `[SMC 스터디카페]`,
+    `📚 안녕하세요, SMC 관리형 스터디카페입니다.`,
+    `${selectedStudent.name} 학생의 등원 시간표를 안내드립니다.`,
+    `▶ 좌석번호: ${selectedStudent.seat_number ?? selectedSchedule?.seat_number ?? '미지정'}번`,
+    `▶ 멤버십: ${selectedSchedule?.membership_type || '–'}`,
+    ``,
+    `아래 버튼을 눌러 시간표를 확인해 주세요 📅`,
+    ``,
+    `문의사항은 010-6748-2577으로 연락 주세요 😊`,
+  ].join('\n')
+}
 
   return (
     <Layout>
