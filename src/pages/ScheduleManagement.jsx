@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import Layout from '../components/Layout'
 import { createClient } from '@supabase/supabase-js'
-import { X, Trash2, Settings, CalendarDays, Users, Archive } from 'lucide-react'
+import { X, Trash2, Settings, CalendarDays, Users, Archive, Clock } from 'lucide-react'
+import { loadTimeConfig, saveTimeConfig, DEFAULT_TIME_CONFIG } from '../lib/timeSlotConfig'
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -58,6 +59,10 @@ export default function ScheduleManagement() {
   const [slotConfig,          setSlotConfig]          = useState(loadSlotConfig)
   const [tempConfig,          setTempConfig]          = useState(loadSlotConfig)
   const [toast,               setToast]               = useState(null)
+  // ── 시간 설정 상태 ────────────────────────────────────
+  const [isTimeConfigOpen,    setIsTimeConfigOpen]    = useState(false)
+  const [timeConfig,          setTimeConfig]          = useState({...DEFAULT_TIME_CONFIG})
+  const [tempTimeConfig,      setTempTimeConfig]      = useState({...DEFAULT_TIME_CONFIG})
   // ── 예비 스케줄 상태 ──────────────────────────────────
   const [activeTab,           setActiveTab]           = useState('current')
   const [backupSets,          setBackupSets]          = useState([])
@@ -75,14 +80,16 @@ export default function ScheduleManagement() {
 
   const fetchAll = async () => {
     setLoading(true)
-    const [{ data: sts }, { data: schs }, { data: bsets }] = await Promise.all([
+    const [{ data: sts }, { data: schs }, { data: bsets }, timeCfg] = await Promise.all([
       supabase.from('students').select('*').eq('status', '재원생').order('name'),
       supabase.from('schedules').select('*'),
       supabase.from('schedule_sets').select('*').order('created_at', { ascending: false }),
+      loadTimeConfig(supabase),  // ✅ 시간 설정 함께 로드
     ])
-    if (sts)   setStudents(sts)
-    if (schs)  setSchedules(schs)
-    if (bsets) setBackupSets(bsets)
+    if (sts)     setStudents(sts)
+    if (schs)    setSchedules(schs)
+    if (bsets)   setBackupSets(bsets)
+    if (timeCfg) { setTimeConfig(timeCfg); setTempTimeConfig(timeCfg) }
     setLoading(false)
   }
 
@@ -169,6 +176,22 @@ export default function ScheduleManagement() {
   }
 
   const openConfig = () => { setTempConfig({ ...slotConfig }); setIsConfigOpen(true) }
+
+  // ── 시간 설정 핸들러 ──────────────────────────────────
+  const openTimeConfig = () => { setTempTimeConfig({ ...timeConfig }); setIsTimeConfigOpen(true) }
+
+  const saveTimeConfigHandler = async () => {
+    try {
+      await saveTimeConfig(supabase, tempTimeConfig)  // ✅ Supabase에 저장
+      setTimeConfig({ ...tempTimeConfig })
+      setIsTimeConfigOpen(false)
+      showToast('시간 설정이 저장됐어요 🕐')
+    } catch (err) {
+      showToast('저장 실패: ' + err.message, 'error')
+    }
+  }
+
+  const maxSlots = useMemo(() => Math.max(...Object.values(slotConfig)), [slotConfig])
 
   const adjustSlot = (cfgKey, delta) => {
     setTempConfig(c => ({ ...c, [cfgKey]: Math.min(20, Math.max(1, (c[cfgKey]||5)+delta)) }))
@@ -300,20 +323,36 @@ export default function ScheduleManagement() {
                   {' / '}전체 <strong style={{ color:'#0F172A' }}>{students.length}</strong>명
                 </span>
               </div>
-              <button
-                onClick={openConfig}
-                style={{
-                  display:'flex', alignItems:'center', gap:'8px',
-                  padding:'10px 18px', borderRadius:'12px',
-                  background:'#fff', border:'1px solid #E2E8F0',
-                  fontSize:'13px', fontWeight:600, color:'#475569', cursor:'pointer',
-                  transition:'all 0.15s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor='#6366F1'; e.currentTarget.style.color='#6366F1' }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor='#E2E8F0'; e.currentTarget.style.color='#475569' }}
-              >
-                <Settings size={15} /> 교시 설정
-              </button>
+              <div style={{ display:'flex', gap:'8px' }}>
+                <button
+                  onClick={openTimeConfig}
+                  style={{
+                    display:'flex', alignItems:'center', gap:'8px',
+                    padding:'10px 18px', borderRadius:'12px',
+                    background:'#fff', border:'1px solid #E2E8F0',
+                    fontSize:'13px', fontWeight:600, color:'#475569', cursor:'pointer',
+                    transition:'all 0.15s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor='#F59E0B'; e.currentTarget.style.color='#D97706' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor='#E2E8F0'; e.currentTarget.style.color='#475569' }}
+                >
+                  <Clock size={15} /> 시간 설정
+                </button>
+                <button
+                  onClick={openConfig}
+                  style={{
+                    display:'flex', alignItems:'center', gap:'8px',
+                    padding:'10px 18px', borderRadius:'12px',
+                    background:'#fff', border:'1px solid #E2E8F0',
+                    fontSize:'13px', fontWeight:600, color:'#475569', cursor:'pointer',
+                    transition:'all 0.15s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor='#6366F1'; e.currentTarget.style.color='#6366F1' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor='#E2E8F0'; e.currentTarget.style.color='#475569' }}
+                >
+                  <Settings size={15} /> 교시 설정
+                </button>
+              </div>
             </div>
           </div>
 
@@ -898,6 +937,96 @@ export default function ScheduleManagement() {
       )}
 
       {/* ═══════════════════════════════════════════
+          모달: 교시 시간 설정
+      ═══════════════════════════════════════════ */}
+      {isTimeConfigOpen && (
+        <div style={{
+          position:'fixed', inset:0, background:'rgba(15,23,42,0.55)',
+          display:'flex', alignItems:'center', justifyContent:'center',
+          zIndex:50, padding:'16px',
+        }}>
+          <div style={{
+            background:'#fff', borderRadius:'24px', width:'100%', maxWidth:'400px',
+            boxShadow:'0 20px 60px rgba(0,0,0,0.15)', maxHeight:'90vh', overflow:'hidden',
+            display:'flex', flexDirection:'column',
+          }}>
+            {/* 헤더 */}
+            <div style={{
+              padding:'20px 24px 16px', borderBottom:'1px solid #F1F5F9',
+              display:'flex', justifyContent:'space-between', alignItems:'center',
+              flexShrink:0,
+            }}>
+              <div>
+                <h2 style={{ fontSize:'16px', fontWeight:700, color:'#0F172A', margin:0 }}>🕐 교시 시간 설정</h2>
+                <p style={{ fontSize:'12px', color:'#94A3B8', marginTop:'2px' }}>각 교시가 실제 몇 시인지 설정하세요</p>
+              </div>
+              <button onClick={() => setIsTimeConfigOpen(false)} style={{
+                width:'32px', height:'32px', borderRadius:'10px', border:'none',
+                background:'#F1F5F9', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
+              }}>
+                <X size={16} style={{ color:'#64748B' }} />
+              </button>
+            </div>
+
+            {/* 교시별 시간 입력 */}
+            <div style={{ padding:'16px 24px', overflowY:'auto', flex:1 }}>
+              <p style={{ fontSize:'11px', color:'#94A3B8', marginBottom:'12px' }}>
+                ※ 교시 수는 <strong>교시 설정</strong>에서 조정할 수 있어요 (현재 최대 {maxSlots}교시)
+              </p>
+              <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
+                {Array.from({ length: maxSlots }, (_, i) => i + 1).map(period => (
+                  <div key={period} style={{
+                    display:'flex', alignItems:'center', gap:'12px',
+                    padding:'10px 14px', borderRadius:'12px',
+                    background:'#F8FAFC', border:'1px solid #E2E8F0',
+                  }}>
+                    <span style={{
+                      fontSize:'14px', fontWeight:700, color:'#6366F1',
+                      width:'52px', flexShrink:0,
+                    }}>{period}교시</span>
+                    <input
+                      type="text"
+                      value={tempTimeConfig[period] || ''}
+                      onChange={e => setTempTimeConfig(c => ({ ...c, [period]: e.target.value }))}
+                      placeholder={DEFAULT_TIME_CONFIG[period] || `${period}교시 시간`}
+                      style={{
+                        flex:1, padding:'7px 12px', borderRadius:'8px',
+                        border:'1.5px solid #E2E8F0', fontSize:'13px', outline:'none',
+                        color:'#0F172A', background:'#fff',
+                      }}
+                      onFocus={e => { e.target.style.borderColor='#F59E0B' }}
+                      onBlur={e => { e.target.style.borderColor='#E2E8F0' }}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div style={{
+                marginTop:'14px', padding:'10px 14px', borderRadius:'12px',
+                background:'#FFFBEB', border:'1px solid #FDE68A',
+              }}>
+                <p style={{ fontSize:'11px', color:'#92400E' }}>
+                  💡 알림톡 메시지와 학부모 공개 시간표에 반영됩니다
+                </p>
+              </div>
+            </div>
+
+            {/* 버튼 */}
+            <div style={{ padding:'0 24px 24px', display:'flex', gap:'10px', flexShrink:0 }}>
+              <button onClick={() => setIsTimeConfigOpen(false)} style={{
+                flex:1, padding:'11px', borderRadius:'12px', border:'1.5px solid #E2E8F0',
+                background:'#fff', fontSize:'14px', fontWeight:600, color:'#64748B', cursor:'pointer',
+              }}>취소</button>
+              <button onClick={saveTimeConfigHandler} style={{
+                flex:1, padding:'11px', borderRadius:'12px', border:'none',
+                background:'linear-gradient(135deg,#F59E0B,#D97706)',
+                fontSize:'14px', fontWeight:700, color:'#fff', cursor:'pointer',
+              }}>저장</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+            {/* ═══════════════════════════════════════════
           모달: 교시 수 설정
       ═══════════════════════════════════════════ */}
       {isConfigOpen && (

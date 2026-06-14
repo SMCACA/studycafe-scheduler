@@ -7,6 +7,7 @@ import AttendanceManagement from './pages/AttendanceManagement'
 import StudentViewer from './pages/StudentViewer'
 import RewardNotification from './pages/RewardNotification'
 import StaffManagement from './pages/StaffManagement'   // ✅ 신규
+import PublicScheduleView from './pages/PublicScheduleView' // ✅ 공개 시간표 뷰
 import ProtectedRoute from './components/ProtectedRoute'
 
 export default function App() {
@@ -43,6 +44,9 @@ export default function App() {
         <Route path="/staff" element={
           <ProtectedRoute><StaffManagement /></ProtectedRoute>
         } />
+
+        {/* ✅ 공개 시간표 뷰 - 로그인 없이 접근 가능 */}
+        <Route path="/view" element={<PublicScheduleView />} />
 
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
       </Routes>

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import Layout from '../components/Layout'
 import { createClient } from '@supabase/supabase-js'
-import { Eye, Copy, CheckCheck, MessageSquare, ChevronDown, Loader } from 'lucide-react'
+import { Eye, Copy, CheckCheck, MessageSquare, ChevronDown, Loader, Link, Clock } from 'lucide-react'
 import { sendNotificationMulti } from '../lib/sendNotification'
+import { loadTimeConfig, buildPublicUrl, DEFAULT_TIME_CONFIG } from '../lib/timeSlotConfig'
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -41,18 +42,21 @@ export default function StudentViewer() {
   const [sending,    setSending]    = useState(false)
   const [recipient,  setRecipient]  = useState('parent')   // ✅ 수신자 선택 (기본: 학부모)
   const [sendResult, setSendResult] = useState(null)        // ✅ 발송 결과 메시지
+  const [timeConfig,  setTimeConfig]  = useState({...DEFAULT_TIME_CONFIG})  // 교시 → 시간 매핑 (Supabase)
+  const [linkCopied,  setLinkCopied]  = useState(false)            // 링크 복사 완료 여부
 
   useEffect(() => { fetchAll() }, [])
 
   const fetchAll = async () => {
     setLoading(true)
-    const [{ data:sts }, { data:schs }] = await Promise.all([
-      // ✅ 재원생만 불러오기
+    const [{ data:sts }, { data:schs }, timeCfg] = await Promise.all([
       supabase.from('students').select('*').eq('status', '재원생').order('name'),
       supabase.from('schedules').select('*'),
+      loadTimeConfig(supabase),  // ✅ 시간 설정 Supabase에서 로드
     ])
-    if (sts)  setStudents(sts)
-    if (schs) setSchedules(schs)
+    if (sts)     setStudents(sts)
+    if (schs)    setSchedules(schs)
+    if (timeCfg) setTimeConfig(timeCfg)
     setLoading(false)
   }
 
@@ -69,6 +73,19 @@ export default function StudentViewer() {
   const totalPeriods = activeDays.reduce((sum, d) =>
     sum + (selectedSchedule?.[d.key]?.length || 0), 0)
 
+  // 공개 링크 생성 (학부모가 시간표를 볼 수 있는 URL)
+  const publicUrl = (selectedStudent && selectedSchedule)
+    ? buildPublicUrl(selectedStudent, selectedSchedule, timeConfig)
+    : ''
+
+  // 링크 복사
+  const handleLinkCopy = async () => {
+    if (!publicUrl) return
+    await navigator.clipboard.writeText(publicUrl)
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 2500)
+  }
+
   const buildMessageText = () => {
     if (!selectedStudent || !selectedSchedule) return ''
     const lines = [
@@ -79,9 +96,13 @@ export default function StudentViewer() {
       `▶ 멤버십: ${selectedSchedule.membership_type || '–'}`, ``,
       `📅 주간 스케줄`,
       ...activeDays.map(d => {
-        const slots = selectedSchedule[d.key] || []
-        return `  ${d.label}: ${slots.sort((a,b)=>a-b).join(', ')}교시`
+        const slots = (selectedSchedule[d.key] || []).sort((a, b) => a - b)
+        // 교시 번호를 시간 라벨로 변환 (예: 2교시 → 오전 10시)
+        const timeLabels = slots.map(p => timeConfig[p] || `${p}교시`)
+        return `  ${d.label}: ${timeLabels.join(', ')}`
       }), ``,
+      `📋 시간표 확인 (클릭하여 보기):`,
+      publicUrl, ``,
       `문의사항은 원으로 연락 주세요 😊`,
     ]
     return lines.join('\n')
@@ -271,6 +292,41 @@ export default function StudentViewer() {
                   border:     `1px solid ${sendResult.ok ? '#A7F3D0' : '#FECACA'}`,
                 }}>{sendResult.msg}</div>
               )}
+
+              {/* 시간표 링크 섹션 */}
+              <div style={{
+                background:'#FFFBEB', border:'1px solid #FDE68A',
+                borderRadius:'12px', padding:'12px 14px', marginBottom:'12px',
+              }}>
+                <p style={{ fontSize:'11px', fontWeight:700, color:'#92400E', marginBottom:'8px' }}>
+                  🔗 학부모 시간표 링크
+                </p>
+                <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
+                  <input
+                    readOnly
+                    value={publicUrl}
+                    style={{
+                      flex:1, padding:'7px 10px', borderRadius:'8px', fontSize:'11px',
+                      border:'1px solid #FDE68A', background:'#fff', color:'#64748B',
+                      overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+                      outline:'none',
+                    }}
+                  />
+                  <button onClick={handleLinkCopy} style={{
+                    display:'flex', alignItems:'center', gap:'6px', flexShrink:0,
+                    padding:'7px 12px', borderRadius:'8px', border:'none',
+                    background: linkCopied ? '#D1FAE5' : '#FDE68A',
+                    color: linkCopied ? '#059669' : '#92400E',
+                    fontSize:'12px', fontWeight:700, cursor:'pointer',
+                    transition:'all 0.2s',
+                  }}>
+                    {linkCopied ? <><CheckCheck size={13} /> 복사됨</> : <><Link size={13} /> 복사</>}
+                  </button>
+                </div>
+                <p style={{ fontSize:'10px', color:'#D97706', marginTop:'6px' }}>
+                  💡 이 링크를 알림톡 메시지에 포함하거나 별도로 공유할 수 있어요
+                </p>
+              </div>
 
               <div style={{ display:'flex', gap:'10px' }}>
                 <button onClick={handleCopy} style={{
