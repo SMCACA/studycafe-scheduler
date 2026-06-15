@@ -40,6 +40,163 @@ function buildGroups(slots) {
 }
 
 // ─────────────────────────────────────────────────────────
+//  ✅ timeConfig에서 올바른 시간 라벨 꺼내기 (평일/주말 분리)
+//  - 새 구조: { weekday: {1:'오후4시',...}, weekend: {1:'오전10시',...} }
+//  - 구 구조 (하위 호환): { 1:'오전9시', 2:'오전10시', ... }
+// ─────────────────────────────────────────────────────────
+function getTimeLabel(timeConfig, dayType, period) {
+  if (timeConfig && typeof timeConfig.weekday === 'object') {
+    // ✅ 새 구조: 평일/주말 구분해서 꺼내기
+    const cfg = dayType === 'weekend' ? timeConfig.weekend : timeConfig.weekday
+    return (cfg && cfg[period]) ? cfg[period] : `${period}교시`
+  } else {
+    // 구버전 하위 호환
+    return (timeConfig && timeConfig[period]) ? timeConfig[period] : `${period}교시`
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+//  ✅ 시간표 테이블 (평일 또는 주말 한 섹션 렌더링)
+// ─────────────────────────────────────────────────────────
+function ScheduleTable({ sectionDays, slots, timeConfig, dayType }) {
+  if (!sectionDays || sectionDays.length === 0) return null
+
+  // 이 섹션 요일들의 rowspan 그룹 계산
+  const dayGroups = {}
+  sectionDays.forEach(day => {
+    dayGroups[day.slotsKey] = buildGroups(slots[day.slotsKey] || [])
+  })
+
+  // 이 섹션에서 사용되는 최대 교시 번호
+  const allNums = sectionDays.flatMap(d => slots[d.slotsKey] || []).filter(Number.isFinite)
+  const maxPeriod = allNums.length > 0 ? Math.max(...allNums) : 1
+  const periods = Array.from({ length: maxPeriod }, (_, i) => i + 1)
+
+  const isWeekend = dayType === 'weekend'
+  const badgeColor  = isWeekend ? '#D97706' : '#4338CA'
+  const badgeBg     = isWeekend ? '#FEF3C7' : '#EEF2FF'
+
+  return (
+    <div style={{ marginBottom: '20px' }}>
+
+      {/* 평일/주말 배지 */}
+      <div style={{ marginBottom: '10px' }}>
+        <span style={{
+          display: 'inline-block',
+          padding: '3px 14px', borderRadius: '999px',
+          background: badgeBg, color: badgeColor,
+          fontSize: '12px', fontWeight: 800,
+        }}>
+          {isWeekend ? '📅 주말' : '🗓️ 평일'}
+        </span>
+      </div>
+
+      {/* 테이블 */}
+      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <table style={{
+          borderCollapse: 'collapse',
+          width: '100%',
+          minWidth: `${sectionDays.length * 68 + 88}px`,
+          fontSize: '13px',
+        }}>
+          <thead>
+            <tr>
+              {/* 시간 열 헤더 */}
+              <th style={{
+                padding: '10px 14px',
+                background: '#F8FAFC',
+                border: '1px solid #E2E8F0',
+                fontSize: '11px', fontWeight: 700, color: '#94A3B8',
+                width: '88px', minWidth: '88px', textAlign: 'center',
+              }}>시간</th>
+
+              {/* 요일 열 헤더 */}
+              {sectionDays.map(day => {
+                const isSun = day.label === '일'
+                const isSat = day.label === '토'
+                const color = isSun ? '#EF4444' : isSat ? '#D97706' : '#374151'
+                return (
+                  <th key={day.slotsKey} style={{
+                    padding: '10px 8px',
+                    background: '#F8FAFC',
+                    border: '1px solid #E2E8F0',
+                    fontSize: '14px', fontWeight: 800,
+                    textAlign: 'center', minWidth: '68px', color,
+                  }}>
+                    {day.label}
+                  </th>
+                )
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {periods.map(period => (
+              <tr key={period}>
+                {/* ✅ 시간 라벨: 평일/주말 구분 적용 */}
+                <td style={{
+                  padding: '9px 14px',
+                  border: '1px solid #E2E8F0',
+                  background: '#F8FAFC',
+                  fontSize: '12px', fontWeight: 600, color: '#64748B',
+                  whiteSpace: 'nowrap', textAlign: 'center',
+                }}>
+                  {getTimeLabel(timeConfig, dayType, period)}
+                </td>
+
+                {/* 요일별 셀 */}
+                {sectionDays.map(day => {
+                  const span = dayGroups[day.slotsKey]?.[period]
+
+                  // span === 0 → 위 rowspan에 포함됨 → null 반환 (셀 렌더링 안 함)
+                  if (span === 0) return null
+
+                  // span > 0 → 연속 블록의 시작 → 등원 셀 (주황색)
+                  if (span > 0) {
+                    return (
+                      <td
+                        key={day.slotsKey}
+                        rowSpan={span}
+                        style={{
+                          border: '2px solid #FDBA74',
+                          background: 'linear-gradient(135deg, #FED7AA, #FDBA74)',
+                          textAlign: 'center',
+                          verticalAlign: 'middle',
+                          fontWeight: 800,
+                          fontSize: '15px',
+                          color: '#92400E',
+                          letterSpacing: '-0.02em',
+                          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.4)',
+                          position: 'relative',
+                        }}
+                      >
+                        등원
+                      </td>
+                    )
+                  }
+
+                  // 빈 셀
+                  return (
+                    <td key={day.slotsKey} style={{
+                      border: '1px solid #E2E8F0',
+                      background: '#fff',
+                    }} />
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {/* 모바일 스크롤 안내 */}
+        <p style={{ fontSize: '11px', color: '#CBD5E1', textAlign: 'center', marginTop: '8px' }}>
+          ← 표를 좌우로 스크롤할 수 있어요 →
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────
 //  멤버십 색상
 // ─────────────────────────────────────────────────────────
 const MEMBERSHIP_COLOR = {
@@ -87,22 +244,13 @@ export default function PublicScheduleView() {
   const timeConfig = data.timeConfig || {}
   const slots = data.slots || {}
 
-  // 슬롯이 있는 요일만 표시
-  const activeDays = DAY_KEYS.filter(day => {
+  // ✅ 평일/주말 요일 분리
+  const allActiveDays = DAY_KEYS.filter(day => {
     const s = slots[day.slotsKey]
     return Array.isArray(s) && s.length > 0
   })
-
-  // 표시할 교시 범위 계산
-  const allPeriods = Object.values(slots).flat().filter(Number.isFinite)
-  const maxPeriod  = allPeriods.length > 0 ? Math.max(...allPeriods) : 5
-  const periods    = Array.from({ length: maxPeriod }, (_, i) => i + 1)  // 1 ~ maxPeriod
-
-  // 요일별 그룹(rowspan) 계산
-  const dayGroups = {}
-  activeDays.forEach(day => {
-    dayGroups[day.slotsKey] = buildGroups(slots[day.slotsKey] || [])
-  })
+  const weekdayActiveDays = allActiveDays.filter(d => d.type === 'weekday')
+  const weekendActiveDays = allActiveDays.filter(d => d.type === 'weekend')
 
   // 총 등원 교시 수
   const totalPeriods = Object.values(slots).reduce((s, arr) => s + (arr?.length || 0), 0)
@@ -117,9 +265,7 @@ export default function PublicScheduleView() {
     }}>
 
       {/* ── 상단 헤더 ── */}
-      <div style={{
-        padding: '32px 24px 24px', textAlign: 'center',
-      }}>
+      <div style={{ padding: '32px 24px 24px', textAlign: 'center' }}>
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: '10px',
           background: 'rgba(255,255,255,0.08)', borderRadius: '999px',
@@ -195,114 +341,31 @@ export default function PublicScheduleView() {
             </div>
           </div>
 
-          {/* 시간표 테이블 */}
+          {/* ✅ 시간표 테이블 (평일/주말 섹션 분리) */}
           <div style={{ padding: '16px 20px 24px' }}>
-            {activeDays.length === 0 ? (
+            {allActiveDays.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '40px 0', color: '#94A3B8' }}>
                 <p style={{ fontSize: '36px' }}>📭</p>
                 <p style={{ fontSize: '14px', marginTop: '8px' }}>등록된 스케줄이 없어요</p>
               </div>
             ) : (
-              <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                <table style={{
-                  borderCollapse: 'collapse',
-                  width: '100%',
-                  minWidth: `${activeDays.length * 68 + 88}px`,
-                  fontSize: '13px',
-                }}>
-                  <thead>
-                    <tr>
-                      {/* 시간 열 헤더 */}
-                      <th style={{
-                        padding: '10px 14px',
-                        background: '#F8FAFC',
-                        border: '1px solid #E2E8F0',
-                        fontSize: '11px', fontWeight: 700, color: '#94A3B8',
-                        width: '88px', minWidth: '88px', textAlign: 'center',
-                      }}>시간</th>
+              <>
+                {/* 평일 섹션 */}
+                <ScheduleTable
+                  sectionDays={weekdayActiveDays}
+                  slots={slots}
+                  timeConfig={timeConfig}
+                  dayType="weekday"
+                />
 
-                      {/* 요일 열 헤더 */}
-                      {activeDays.map(day => {
-                        const isSun = day.label === '일'
-                        const isSat = day.label === '토'
-                        const color = isSun ? '#EF4444' : isSat ? '#D97706' : '#374151'
-                        return (
-                          <th key={day.slotsKey} style={{
-                            padding: '10px 8px',
-                            background: '#F8FAFC',
-                            border: '1px solid #E2E8F0',
-                            fontSize: '14px', fontWeight: 800,
-                            textAlign: 'center', minWidth: '68px', color,
-                          }}>
-                            {day.label}
-                          </th>
-                        )
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {periods.map(period => (
-                      <tr key={period}>
-                        {/* 시간 라벨 셀 */}
-                        <td style={{
-                          padding: '9px 14px',
-                          border: '1px solid #E2E8F0',
-                          background: '#F8FAFC',
-                          fontSize: '12px', fontWeight: 600, color: '#64748B',
-                          whiteSpace: 'nowrap', textAlign: 'center',
-                        }}>
-                          {timeConfig[period] || `${period}교시`}
-                        </td>
-
-                        {/* 요일별 셀 */}
-                        {activeDays.map(day => {
-                          const span = dayGroups[day.slotsKey]?.[period]
-
-                          // span === 0 → 위 rowspan에 포함됨 → null 반환 (셀 렌더링 안 함)
-                          if (span === 0) return null
-
-                          // span > 0 → 연속 블록의 시작 → 등원 셀 (주황색)
-                          if (span > 0) {
-                            return (
-                              <td
-                                key={day.slotsKey}
-                                rowSpan={span}
-                                style={{
-                                  border: '2px solid #FDBA74',
-                                  background: 'linear-gradient(135deg, #FED7AA, #FDBA74)',
-                                  textAlign: 'center',
-                                  verticalAlign: 'middle',
-                                  fontWeight: 800,
-                                  fontSize: '15px',
-                                  color: '#92400E',
-                                  letterSpacing: '-0.02em',
-                                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.4)',
-                                  position: 'relative',
-                                }}
-                              >
-                                등원
-                              </td>
-                            )
-                          }
-
-                          // 빈 셀
-                          return (
-                            <td key={day.slotsKey} style={{
-                              border: '1px solid #E2E8F0',
-                              background: '#fff',
-                            }} />
-                          )
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-
-                {/* 모바일 안내 */}
-                <p style={{ fontSize: '11px', color: '#CBD5E1', textAlign: 'center', marginTop: '12px' }}>
-                  ← 표를 좌우로 스크롤할 수 있어요 →
-                </p>
-              </div>
+                {/* 주말 섹션 */}
+                <ScheduleTable
+                  sectionDays={weekendActiveDays}
+                  slots={slots}
+                  timeConfig={timeConfig}
+                  dayType="weekend"
+                />
+              </>
             )}
           </div>
         </div>

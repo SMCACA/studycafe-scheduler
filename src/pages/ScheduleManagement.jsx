@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import Layout from '../components/Layout'
 import { createClient } from '@supabase/supabase-js'
 import { X, Trash2, Settings, CalendarDays, Users, Archive, Clock, ChevronUp, ChevronDown } from 'lucide-react'
-import { loadTimeConfig, saveTimeConfig, DEFAULT_TIME_CONFIG } from '../lib/timeSlotConfig'
+import { loadTimeConfig, saveTimeConfig, DEFAULT_WEEKDAY_CONFIG, DEFAULT_WEEKEND_CONFIG } from '../lib/timeSlotConfig'
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -59,10 +59,11 @@ export default function ScheduleManagement() {
   const [slotConfig,          setSlotConfig]          = useState(loadSlotConfig)
   const [tempConfig,          setTempConfig]          = useState(loadSlotConfig)
   const [toast,               setToast]               = useState(null)
-  // ── 시간 설정 상태 ────────────────────────────────────
+  // ── 시간 설정 상태 (평일/주말 분리) ──────────────────────
   const [isTimeConfigOpen,    setIsTimeConfigOpen]    = useState(false)
-  const [timeConfig,          setTimeConfig]          = useState({...DEFAULT_TIME_CONFIG})
-  const [tempTimeConfig,      setTempTimeConfig]      = useState({...DEFAULT_TIME_CONFIG})
+  const [timeConfig,          setTimeConfig]          = useState({ weekday: {...DEFAULT_WEEKDAY_CONFIG}, weekend: {...DEFAULT_WEEKEND_CONFIG} })
+  const [tempTimeConfig,      setTempTimeConfig]      = useState({ weekday: {...DEFAULT_WEEKDAY_CONFIG}, weekend: {...DEFAULT_WEEKEND_CONFIG} })
+  const [timeTabMode,         setTimeTabMode]         = useState('weekday')  // ✅ 평일/주말 탭
   // ── 예비 스케줄 상태 ──────────────────────────────────
   const [activeTab,           setActiveTab]           = useState('current')
   const [backupSets,          setBackupSets]          = useState([])
@@ -87,12 +88,18 @@ export default function ScheduleManagement() {
       supabase.from('students').select('*').eq('status', '재원생').order('name'),
       supabase.from('schedules').select('*'),
       supabase.from('schedule_sets').select('*').order('created_at', { ascending: false }),
-      loadTimeConfig(supabase),  // ✅ 시간 설정 함께 로드
+      loadTimeConfig(supabase),
     ])
     if (sts)     setStudents(sts)
     if (schs)    setSchedules(schs)
     if (bsets)   setBackupSets(bsets)
-    if (timeCfg) { setTimeConfig(timeCfg); setTempTimeConfig(timeCfg) }
+    if (timeCfg) {
+      setTimeConfig(timeCfg)
+      setTempTimeConfig({
+        weekday: { ...timeCfg.weekday },
+        weekend: { ...timeCfg.weekend },
+      })
+    }
     setLoading(false)
   }
 
@@ -119,7 +126,6 @@ export default function ScheduleManagement() {
         const vb = sb?.seat_number ?? 9999
         return sortDir === 'asc' ? va - vb : vb - va
       }
-      // 기본: 이름순
       return sortDir === 'asc'
         ? (a.name || '').localeCompare(b.name || '', 'ko')
         : (b.name || '').localeCompare(a.name || '', 'ko')
@@ -203,13 +209,23 @@ export default function ScheduleManagement() {
 
   const openConfig = () => { setTempConfig({ ...slotConfig }); setIsConfigOpen(true) }
 
-  // ── 시간 설정 핸들러 ──────────────────────────────────
-  const openTimeConfig = () => { setTempTimeConfig({ ...timeConfig }); setIsTimeConfigOpen(true) }
+  // ── 시간 설정 핸들러 (평일/주말 분리) ────────────────────
+  const openTimeConfig = () => {
+    setTempTimeConfig({
+      weekday: { ...timeConfig.weekday },
+      weekend: { ...timeConfig.weekend },
+    })
+    setTimeTabMode('weekday')   // ✅ 열 때마다 평일 탭으로 초기화
+    setIsTimeConfigOpen(true)
+  }
 
   const saveTimeConfigHandler = async () => {
     try {
-      await saveTimeConfig(supabase, tempTimeConfig)  // ✅ Supabase에 저장
-      setTimeConfig({ ...tempTimeConfig })
+      await saveTimeConfig(supabase, tempTimeConfig)
+      setTimeConfig({
+        weekday: { ...tempTimeConfig.weekday },
+        weekend: { ...tempTimeConfig.weekend },
+      })
       setIsTimeConfigOpen(false)
       showToast('시간 설정이 저장됐어요 🕐')
     } catch (err) {
@@ -979,7 +995,7 @@ export default function ScheduleManagement() {
       )}
 
       {/* ═══════════════════════════════════════════
-          모달: 교시 시간 설정
+          모달: 교시 시간 설정 (평일/주말 탭 분리)
       ═══════════════════════════════════════════ */}
       {isTimeConfigOpen && (
         <div style={{
@@ -988,11 +1004,11 @@ export default function ScheduleManagement() {
           zIndex:50, padding:'16px',
         }}>
           <div style={{
-            background:'#fff', borderRadius:'24px', width:'100%', maxWidth:'400px',
+            background:'#fff', borderRadius:'24px', width:'100%', maxWidth:'420px',
             boxShadow:'0 20px 60px rgba(0,0,0,0.15)', maxHeight:'90vh', overflow:'hidden',
             display:'flex', flexDirection:'column',
           }}>
-            {/* 헤더 */}
+            {/* 모달 헤더 */}
             <div style={{
               padding:'20px 24px 16px', borderBottom:'1px solid #F1F5F9',
               display:'flex', justifyContent:'space-between', alignItems:'center',
@@ -1000,7 +1016,9 @@ export default function ScheduleManagement() {
             }}>
               <div>
                 <h2 style={{ fontSize:'16px', fontWeight:700, color:'#0F172A', margin:0 }}>🕐 교시 시간 설정</h2>
-                <p style={{ fontSize:'12px', color:'#94A3B8', marginTop:'2px' }}>각 교시가 실제 몇 시인지 설정하세요</p>
+                <p style={{ fontSize:'12px', color:'#94A3B8', marginTop:'2px' }}>
+                  평일과 주말의 교시별 시간을 각각 설정하세요
+                </p>
               </div>
               <button onClick={() => setIsTimeConfigOpen(false)} style={{
                 width:'32px', height:'32px', borderRadius:'10px', border:'none',
@@ -1010,9 +1028,47 @@ export default function ScheduleManagement() {
               </button>
             </div>
 
+            {/* ✅ 평일 / 주말 탭 */}
+            <div style={{ padding:'16px 24px 0', flexShrink:0 }}>
+              <div style={{ display:'flex', gap:'8px' }}>
+                {[
+                  { key:'weekday', emoji:'🌞', label:'평일 (월~금)' },
+                  { key:'weekend', emoji:'🌅', label:'주말 (토~일)' },
+                ].map(tab => {
+                  const isActive = timeTabMode === tab.key
+                  return (
+                    <button key={tab.key} onClick={() => setTimeTabMode(tab.key)} style={{
+                      flex:1, padding:'10px 8px', borderRadius:'12px',
+                      fontSize:'13px', fontWeight:700, cursor:'pointer', textAlign:'center',
+                      border: isActive ? '2px solid #F59E0B' : '2px solid #E2E8F0',
+                      background: isActive ? '#FFFBEB' : '#F8FAFC',
+                      color: isActive ? '#92400E' : '#64748B',
+                      transition:'all 0.15s',
+                    }}>
+                      <span style={{ display:'block', fontSize:'18px', marginBottom:'2px' }}>{tab.emoji}</span>
+                      {tab.label}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* 탭 안내 문구 */}
+              <div style={{
+                marginTop:'10px', padding:'8px 12px', borderRadius:'10px',
+                background: timeTabMode === 'weekday' ? '#EEF2FF' : '#FFF7ED',
+                fontSize:'11px',
+                color: timeTabMode === 'weekday' ? '#4338CA' : '#B45309',
+              }}>
+                {timeTabMode === 'weekday'
+                  ? '💡 평일(월~금) 교시별 시작 시간을 입력하세요'
+                  : '💡 주말(토~일) 교시별 시작 시간을 입력하세요'
+                }
+              </div>
+            </div>
+
             {/* 교시별 시간 입력 */}
-            <div style={{ padding:'16px 24px', overflowY:'auto', flex:1 }}>
-              <p style={{ fontSize:'11px', color:'#94A3B8', marginBottom:'12px' }}>
+            <div style={{ padding:'12px 24px 16px', overflowY:'auto', flex:1 }}>
+              <p style={{ fontSize:'11px', color:'#94A3B8', marginBottom:'10px' }}>
                 ※ 교시 수는 <strong>교시 설정</strong>에서 조정할 수 있어요 (현재 최대 {maxSlots}교시)
               </p>
               <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
@@ -1023,36 +1079,45 @@ export default function ScheduleManagement() {
                     background:'#F8FAFC', border:'1px solid #E2E8F0',
                   }}>
                     <span style={{
-                      fontSize:'14px', fontWeight:700, color:'#6366F1',
+                      fontSize:'14px', fontWeight:700,
+                      color: timeTabMode === 'weekday' ? '#4338CA' : '#D97706',
                       width:'52px', flexShrink:0,
                     }}>{period}교시</span>
                     <input
                       type="text"
-                      value={tempTimeConfig[period] || ''}
-                      onChange={e => setTempTimeConfig(c => ({ ...c, [period]: e.target.value }))}
-                      placeholder={DEFAULT_TIME_CONFIG[period] || `${period}교시 시간`}
+                      value={tempTimeConfig[timeTabMode]?.[period] || ''}
+                      onChange={e => setTempTimeConfig(c => ({
+                        ...c,
+                        [timeTabMode]: { ...c[timeTabMode], [period]: e.target.value }
+                      }))}
+                      placeholder={
+                        timeTabMode === 'weekday'
+                          ? (DEFAULT_WEEKDAY_CONFIG[period] || `${period}교시 시간`)
+                          : (DEFAULT_WEEKEND_CONFIG[period] || `${period}교시 시간`)
+                      }
                       style={{
                         flex:1, padding:'7px 12px', borderRadius:'8px',
                         border:'1.5px solid #E2E8F0', fontSize:'13px', outline:'none',
                         color:'#0F172A', background:'#fff',
                       }}
-                      onFocus={e => { e.target.style.borderColor='#F59E0B' }}
-                      onBlur={e => { e.target.style.borderColor='#E2E8F0' }}
+                      onFocus={e => { e.target.style.borderColor = timeTabMode === 'weekday' ? '#6366F1' : '#F59E0B' }}
+                      onBlur={e => { e.target.style.borderColor = '#E2E8F0' }}
                     />
                   </div>
                 ))}
               </div>
+
               <div style={{
                 marginTop:'14px', padding:'10px 14px', borderRadius:'12px',
                 background:'#FFFBEB', border:'1px solid #FDE68A',
               }}>
-                <p style={{ fontSize:'11px', color:'#92400E' }}>
-                  💡 알림톡 메시지와 학부모 공개 시간표에 반영됩니다
+                <p style={{ fontSize:'11px', color:'#92400E', margin:0 }}>
+                  💡 저장 후 알림톡 메시지와 시간표 이미지에 바로 반영됩니다
                 </p>
               </div>
             </div>
 
-            {/* 버튼 */}
+            {/* 하단 버튼 */}
             <div style={{ padding:'0 24px 24px', display:'flex', gap:'10px', flexShrink:0 }}>
               <button onClick={() => setIsTimeConfigOpen(false)} style={{
                 flex:1, padding:'11px', borderRadius:'12px', border:'1.5px solid #E2E8F0',
@@ -1068,7 +1133,7 @@ export default function ScheduleManagement() {
         </div>
       )}
 
-            {/* ═══════════════════════════════════════════
+      {/* ═══════════════════════════════════════════
           모달: 교시 수 설정
       ═══════════════════════════════════════════ */}
       {isConfigOpen && (

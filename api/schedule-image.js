@@ -1,5 +1,5 @@
 // ================================================================
-// 📁 api/schedule-image.js
+// 📁 api/schedule-image.js  (평일/주말 분리 버전)
 // ================================================================
 
 import { ImageResponse } from '@vercel/og'
@@ -34,7 +34,7 @@ const h = (type, props, ...children) => {
   }
 }
 
-// ✅ res.ok 체크 추가 - 404 응답을 폰트로 착각하는 버그 방지
+// 폰트 로드
 async function loadFont(req) {
   try {
     const origin = `https://${req.headers.host}`
@@ -49,6 +49,136 @@ async function loadFont(req) {
     console.error('폰트 로드 실패:', e.message)
     return []
   }
+}
+
+/**
+ * timeConfig에서 평일/주말 시간 라벨 꺼내기 (구버전 호환 포함)
+ * - 새 구조: { weekday: {1:'오후4시',...}, weekend: {1:'오전10시',...} }
+ * - 구 구조: { 1:'오전9시', 2:'오전10시', ... }
+ */
+function getTimeLabel(timeConfig, dayType, period) {
+  if (timeConfig && typeof timeConfig.weekday === 'object') {
+    // ✅ 새 구조
+    const cfg = dayType === 'weekend' ? timeConfig.weekend : timeConfig.weekday
+    return (cfg && cfg[period]) ? cfg[period] : `${period}교시`
+  } else {
+    // 구버전 하위 호환
+    return (timeConfig && timeConfig[period]) ? timeConfig[period] : `${period}교시`
+  }
+}
+
+/**
+ * 그리드 한 섹션(평일 or 주말) 렌더링
+ * sectionLabel: '평일' | '주말'
+ * sectionDays: 해당 요일 배열
+ * allSlots: 전체 slots 객체
+ * dayType: 'weekday' | 'weekend'
+ */
+function renderSection({ sectionLabel, sectionDays, allSlots, dayType, timeConfig, W, PAD, COL_T, ROW_H }) {
+  if (sectionDays.length === 0) return null
+
+  const nDays = sectionDays.length
+  const COL_D = Math.floor((W - PAD * 2 - COL_T) / nDays)
+
+  const allNums = sectionDays.flatMap(d => allSlots[d.key] || []).filter(Number.isFinite)
+  const maxPeriod = allNums.length > 0 ? Math.max(...allNums) : 1
+  const periods = Array.from({ length: maxPeriod }, (_, i) => i + 1)
+
+  const sectionColor = dayType === 'weekend' ? '#D97706' : '#4338CA'
+  const sectionBg    = dayType === 'weekend' ? '#FEF3C7' : '#EEF2FF'
+
+  return h('div', { style: { marginBottom: 16 } },
+    // 섹션 타이틀
+    h('div', {
+      style: {
+        display: 'flex', alignItems: 'center', gap: 8,
+        height: 40, padding: `0 ${PAD + 8}px`,
+      },
+    },
+      h('div', {
+        style: {
+          padding: '3px 12px', borderRadius: 999,
+          background: sectionBg, color: sectionColor,
+          fontSize: 13, fontWeight: 800,
+        },
+      }, sectionLabel === '평일' ? '🗓️ 평일' : '📅 주말'),
+    ),
+
+    // 그리드
+    h('div', {
+      style: {
+        display: 'flex', flexDirection: 'column',
+        margin: `0 ${PAD}px`, background: '#FFFFFF',
+        borderRadius: 18, overflow: 'hidden',
+      },
+    },
+      // 요일 헤더 행
+      h('div', {
+        style: { display: 'flex', background: '#F8FAFC', borderBottom: '2px solid #E2E8F0' },
+      },
+        h('div', {
+          style: {
+            width: COL_T, height: ROW_H, display: 'flex',
+            alignItems: 'center', justifyContent: 'center',
+            fontSize: 12, fontWeight: 700, color: '#94A3B8',
+            borderRight: '1px solid #E2E8F0',
+          },
+        }, '시간'),
+        ...sectionDays.map((day, i) =>
+          h('div', {
+            key: day.key,
+            style: {
+              width: COL_D, height: ROW_H, display: 'flex',
+              alignItems: 'center', justifyContent: 'center',
+              fontSize: 16, fontWeight: 800,
+              color: day.label === '일' ? '#EF4444'
+                   : day.weekend        ? '#D97706'
+                   :                      '#1E293B',
+              borderRight: i < sectionDays.length - 1 ? '1px solid #E2E8F0' : 'none',
+            },
+          }, day.label)
+        ),
+      ),
+
+      // 교시별 행
+      ...periods.map((period, ri) =>
+        h('div', {
+          key: `row-${period}`,
+          style: {
+            display: 'flex',
+            borderBottom: ri < periods.length - 1 ? '1px solid #F1F5F9' : 'none',
+          },
+        },
+          // ✅ 시간 라벨 (평일/주말 구분)
+          h('div', {
+            style: {
+              width: COL_T, height: ROW_H, display: 'flex',
+              alignItems: 'center', justifyContent: 'center',
+              background: '#F8FAFC', fontSize: 11, color: '#64748B',
+              borderRight: '1px solid #E2E8F0',
+              textAlign: 'center', padding: '0 4px',
+            },
+          }, getTimeLabel(timeConfig, dayType, period)),
+
+          // 요일별 셀
+          ...sectionDays.map((day, ci) => {
+            const on = Array.isArray(allSlots[day.key]) && allSlots[day.key].includes(period)
+            return h('div', {
+              key: `${day.key}-${period}`,
+              style: {
+                width: COL_D, height: ROW_H, display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+                background: on ? '#FED7AA' : '#FFFFFF',
+                fontSize: 13, fontWeight: on ? 800 : 400,
+                color: on ? '#92400E' : '#E2E8F0',
+                borderRight: ci < sectionDays.length - 1 ? '1px solid #F1F5F9' : 'none',
+              },
+            }, on ? '등원' : '-')
+          }),
+        )
+      ),
+    ),
+  )
 }
 
 export default async function handler(req, res) {
@@ -80,12 +210,13 @@ export default async function handler(req, res) {
       timeConfig = {},
     } = data
 
-    const activeDays = DAY_KEYS.filter(d => Array.isArray(slots[d.key]) && slots[d.key].length > 0)
-    const allNums    = Object.values(slots).flat().filter(n => Number.isFinite(n))
-    const maxPeriod  = allNums.length > 0 ? Math.max(...allNums) : 5
-    const periods    = Array.from({ length: maxPeriod }, (_, i) => i + 1)
-    const total      = allNums.length
-    const ms         = MS_COLOR[membership] || { bg: '#F1F5F9', color: '#475569' }
+    // ✅ 평일/주말 요일 분리
+    const activeDays    = DAY_KEYS.filter(d => Array.isArray(slots[d.key]) && slots[d.key].length > 0)
+    const weekdayDays   = activeDays.filter(d => !d.weekend)
+    const weekendDays   = activeDays.filter(d => d.weekend)
+
+    const allNums = Object.values(slots).flat().filter(n => Number.isFinite(n))
+    const total   = allNums.length
 
     const now  = new Date()
     const date = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')} 기준`
@@ -93,10 +224,20 @@ export default async function handler(req, res) {
     const W     = 800
     const PAD   = 32
     const COL_T = 112
-    const nDays = Math.max(activeDays.length, 1)
-    const COL_D = Math.floor((W - PAD * 2 - COL_T) / nDays)
     const ROW_H = 52
-    const H     = 96 + 16 + 100 + 56 + (periods.length + 1) * ROW_H + 80
+    const ms    = MS_COLOR[membership] || { bg: '#F1F5F9', color: '#475569' }
+
+    // 각 섹션 높이 계산
+    const calcSectionH = (days) => {
+      if (days.length === 0) return 0
+      const nums = days.flatMap(d => slots[d.key] || []).filter(Number.isFinite)
+      const maxP = nums.length > 0 ? Math.max(...nums) : 1
+      return 40 + (maxP + 1) * ROW_H + 16  // 섹션타이틀 + 그리드 + 간격
+    }
+
+    const weekdaySectionH = calcSectionH(weekdayDays)
+    const weekendSectionH = calcSectionH(weekendDays)
+    const H = 96 + 16 + 100 + 56 + weekdaySectionH + weekendSectionH + 80
 
     const element = h('div', {
       style: {
@@ -158,81 +299,25 @@ export default async function handler(req, res) {
         }, '등원 = 주황색 칸'),
       ),
 
-      // ── 시간표 그리드 ──
-      h('div', {
-        style: {
-          display: 'flex', flexDirection: 'column',
-          margin: `0 ${PAD}px`, background: '#FFFFFF',
-          borderRadius: 18, overflow: 'hidden',
-        },
-      },
+      // ✅ 평일 섹션
+      renderSection({
+        sectionLabel: '평일',
+        sectionDays: weekdayDays,
+        allSlots: slots,
+        dayType: 'weekday',
+        timeConfig,
+        W, PAD, COL_T, ROW_H,
+      }),
 
-        // 요일 헤더 행
-        h('div', {
-          style: { display: 'flex', background: '#F8FAFC', borderBottom: '2px solid #E2E8F0' },
-        },
-          h('div', {
-            style: {
-              width: COL_T, height: ROW_H, display: 'flex',
-              alignItems: 'center', justifyContent: 'center',
-              fontSize: 12, fontWeight: 700, color: '#94A3B8',
-              borderRight: '1px solid #E2E8F0',
-            },
-          }, '시간'),
-          ...activeDays.map((day, i) =>
-            h('div', {
-              key: day.key,
-              style: {
-                width: COL_D, height: ROW_H, display: 'flex',
-                alignItems: 'center', justifyContent: 'center',
-                fontSize: 16, fontWeight: 800,
-                color: day.label === '일' ? '#EF4444'
-                     : day.weekend        ? '#D97706'
-                     :                      '#1E293B',
-                borderRight: i < activeDays.length - 1 ? '1px solid #E2E8F0' : 'none',
-              },
-            }, day.label)
-          ),
-        ),
-
-        // 교시별 행
-        ...periods.map((period, ri) =>
-          h('div', {
-            key: `row-${period}`,
-            style: {
-              display: 'flex',
-              borderBottom: ri < periods.length - 1 ? '1px solid #F1F5F9' : 'none',
-            },
-          },
-            // 시간 라벨
-            h('div', {
-              style: {
-                width: COL_T, height: ROW_H, display: 'flex',
-                alignItems: 'center', justifyContent: 'center',
-                background: '#F8FAFC', fontSize: 11, color: '#64748B',
-                borderRight: '1px solid #E2E8F0',
-                textAlign: 'center', padding: '0 4px',
-              },
-            }, timeConfig[period] || `${period}교시`),
-
-            // 요일별 셀
-            ...activeDays.map((day, ci) => {
-              const on = Array.isArray(slots[day.key]) && slots[day.key].includes(period)
-              return h('div', {
-                key: `${day.key}-${period}`,
-                style: {
-                  width: COL_D, height: ROW_H, display: 'flex',
-                  alignItems: 'center', justifyContent: 'center',
-                  background: on ? '#FED7AA' : '#FFFFFF',
-                  fontSize: 13, fontWeight: on ? 800 : 400,
-                  color: on ? '#92400E' : '#E2E8F0',
-                  borderRight: ci < activeDays.length - 1 ? '1px solid #F1F5F9' : 'none',
-                },
-              }, on ? '등원' : '-')
-            }),
-          )
-        ),
-      ),
+      // ✅ 주말 섹션
+      renderSection({
+        sectionLabel: '주말',
+        sectionDays: weekendDays,
+        allSlots: slots,
+        dayType: 'weekend',
+        timeConfig,
+        W, PAD, COL_T, ROW_H,
+      }),
 
       // ── 푸터 ──
       h('div', {
@@ -246,7 +331,6 @@ export default async function handler(req, res) {
       ),
     )
 
-    // Node.js 방식: 버퍼로 변환 후 직접 전송
     const imageResponse = new ImageResponse(element, { width: W, height: H, fonts })
     const buffer = await imageResponse.arrayBuffer()
 
