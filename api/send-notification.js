@@ -90,9 +90,22 @@ export default async function handler(req, res) {
       disableSms: false,           // 알림톡 실패 시 SMS로 자동 대체 (권장!)
     }
 
-    // ✅ 버튼이 있으면 추가 (시간표 링크 버튼 등)
+    // ✅ 버튼 URL 길이 체크 후 추가 (솔라피 제한: 최대 300자)
+    // 시간표 이미지 URL은 스케줄 데이터가 통째로 들어가서 500~700자가 됨 → 제한 초과!
+    // ➡ URL이 300자 이하일 때만 버튼 추가, 그 이상이면 버튼 없이 발송
     if (buttons && buttons.length > 0) {
-      message.kakaoOptions.buttons = buttons
+      const urlOk = buttons.every(btn =>
+        (!btn.linkMo || btn.linkMo.length <= 300) &&
+        (!btn.linkPc || btn.linkPc.length <= 300)
+      )
+      if (urlOk) {
+        message.kakaoOptions.buttons = buttons
+        console.log('[알림톡 발송] 버튼 추가 완료')
+      } else {
+        // URL이 너무 길면 버튼 없이 발송 (알림톡 자체는 정상 발송됨)
+        console.warn('[경고] 버튼 URL이 300자 초과 → 버튼 없이 발송합니다')
+        console.warn('[버튼 URL 길이]', buttons.map(b => ({ mo: b.linkMo?.length, pc: b.linkPc?.length })))
+      }
     }
 
     console.log('[알림톡 발송] 수신번호:', cleanPhone(to))
