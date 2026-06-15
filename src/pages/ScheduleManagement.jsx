@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import Layout from '../components/Layout'
 import { createClient } from '@supabase/supabase-js'
-import { X, Trash2, Settings, CalendarDays, Users, Archive, Clock } from 'lucide-react'
+import { X, Trash2, Settings, CalendarDays, Users, Archive, Clock, ChevronUp, ChevronDown } from 'lucide-react'
 import { loadTimeConfig, saveTimeConfig, DEFAULT_TIME_CONFIG } from '../lib/timeSlotConfig'
 
 const supabase = createClient(
@@ -69,6 +69,9 @@ export default function ScheduleManagement() {
   const [backupLoading,       setBackupLoading]       = useState(false)
   const [backupName,          setBackupName]          = useState('')
   const [showBackupNameInput, setShowBackupNameInput] = useState(false)
+  // ✅ 좌석 정렬 상태
+  const [sortField, setSortField] = useState('name')   // 'name' | 'seat'
+  const [sortDir,   setSortDir]   = useState('asc')
 
   const dayConfig = useMemo(() =>
     DAY_KEYS.map(d => ({ ...d, slots: slotConfig[d.cfgKey] || 5 })), [slotConfig])
@@ -99,6 +102,29 @@ export default function ScheduleManagement() {
   }
 
   const getSchedule = id => schedules.find(s => s.student_id === id) || null
+
+  // ✅ 정렬 토글 함수
+  const toggleSortSched = (field) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortField(field); setSortDir('asc') }
+  }
+
+  // ✅ 정렬된 학생 목록 (이름 or 좌석 기준)
+  const displayStudents = useMemo(() => {
+    return [...students].sort((a, b) => {
+      if (sortField === 'seat') {
+        const sa = schedules.find(s => s.student_id === a.id)
+        const sb = schedules.find(s => s.student_id === b.id)
+        const va = sa?.seat_number ?? 9999
+        const vb = sb?.seat_number ?? 9999
+        return sortDir === 'asc' ? va - vb : vb - va
+      }
+      // 기본: 이름순
+      return sortDir === 'asc'
+        ? (a.name || '').localeCompare(b.name || '', 'ko')
+        : (b.name || '').localeCompare(a.name || '', 'ko')
+    })
+  }, [students, schedules, sortField, sortDir])
 
   const handleRowClick = student => {
     const schedule = getSchedule(student.id)
@@ -408,19 +434,35 @@ export default function ScheduleManagement() {
                 <thead>
                   <tr>
                     {[
-                      { label:'구분',  w:60,  left:0   },
-                      { label:'좌석',  w:48,  left:60  },
-                      { label:'이름',  w:80,  left:108 },
-                      { label:'학년',  w:56,  left:188 },
-                    ].map(({ label, w, left }) => (
-                      <th key={label} rowSpan={2} style={{
-                        position:'sticky', left:`${left}px`, zIndex:20,
-                        background:'#F8FAFC', minWidth:`${w}px`, width:`${w}px`,
-                        border:cellBorder, padding:'10px 8px',
-                        fontSize:'11px', fontWeight:700, color:'#64748B',
-                        letterSpacing:'0.04em', textAlign:'center',
-                        boxShadow: left === 188 ? '4px 0 8px rgba(0,0,0,0.06)' : 'none',
-                      }}>{label}</th>
+                      { label:'구분',  w:60,  left:0,   field: null  },
+                      { label:'좌석',  w:48,  left:60,  field:'seat' },
+                      { label:'이름',  w:80,  left:108, field:'name' },
+                      { label:'학년',  w:56,  left:188, field: null  },
+                    ].map(({ label, w, left, field }) => (
+                      <th key={label} rowSpan={2}
+                        onClick={field ? () => toggleSortSched(field) : undefined}
+                        style={{
+                          position:'sticky', left:`${left}px`, zIndex:20,
+                          background:'#F8FAFC', minWidth:`${w}px`, width:`${w}px`,
+                          border:cellBorder, padding:'10px 8px',
+                          fontSize:'11px', fontWeight:700,
+                          color: field && sortField===field ? '#6366F1' : '#64748B',
+                          letterSpacing:'0.04em', textAlign:'center',
+                          boxShadow: left === 188 ? '4px 0 8px rgba(0,0,0,0.06)' : 'none',
+                          cursor: field ? 'pointer' : 'default',
+                          userSelect: field ? 'none' : 'auto',
+                        }}>
+                        <span style={{ display:'inline-flex', alignItems:'center', gap:'3px', justifyContent:'center' }}>
+                          {label}
+                          {field && (
+                            sortField === field
+                              ? (sortDir === 'asc'
+                                  ? <ChevronUp  size={10} style={{ color:'#6366F1' }} />
+                                  : <ChevronDown size={10} style={{ color:'#6366F1' }} />)
+                              : <span style={{ color:'#CBD5E1', fontSize:'9px' }}>↕</span>
+                          )}
+                        </span>
+                      </th>
                     ))}
                     {dayConfig.map(day => (
                       <th key={day.key} colSpan={day.slots} style={{
@@ -468,7 +510,7 @@ export default function ScheduleManagement() {
                       </td>
                     </tr>
                   ) : (
-                    students.map((student, rowIdx) => {
+                    displayStudents.map((student, rowIdx) => {
                       const schedule = getSchedule(student.id)
                       const rowBg = rowIdx % 2 === 0 ? '#fff' : '#FAFBFF'
                       return (

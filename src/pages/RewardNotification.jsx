@@ -140,13 +140,12 @@ export default function RewardNotification() {
     const date = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })
     const icon = selectedTemplate.type === '상점' ? '⭐' : '⚠️'
     const sign = selectedTemplate.type === '상점' ? '+' : '-'
-    const recipientName = recipient === 'parent'
-      ? (selectedStudent.parent_name || '학부모님')
-      : `${selectedStudent.name} 학생`
+    // ✅ 공통 인사말 - 학부모 개인 이름 제거 (학부모/학생 관계없이 통일된 내용)
+    const greeting = recipient === 'parent' ? '학부모님' : `${selectedStudent.name} 학생`
     const lines = [
       `[SMC 스터디카페] ${icon} ${selectedTemplate.type} 알림`,
       '',
-      `안녕하세요, ${recipientName}!`,
+      `안녕하세요, ${greeting}!`,
       `${selectedStudent.name} 학생의 ${selectedTemplate.type} 알림을 드립니다.`,
       '',
       `📌 사유: ${selectedTemplate.title}`,
@@ -173,7 +172,7 @@ export default function RewardNotification() {
 
     const targetPhone = recipient === 'parent'
       ? selectedStudent.parent_phone
-      : selectedStudent.phone
+      : selectedStudent.student_phone
 
     if (!targetPhone) {
       const who = recipient === 'parent' ? '학부모 전화번호' : '학생 전화번호'
@@ -282,7 +281,7 @@ export default function RewardNotification() {
               <div style={{ display: 'flex', gap: '8px' }}>
                 {[
                   { value: 'parent',  label: '👨‍👩‍👧 학부모', phone: selectedStudent.parent_phone },
-                  { value: 'student', label: '🧑‍🎓 학생 본인', phone: selectedStudent.phone },
+                  { value: 'student', label: '🧑‍🎓 학생 본인', phone: selectedStudent.student_phone },
                 ].map(({ value, label, phone }) => (
                   <button
                     key={value}

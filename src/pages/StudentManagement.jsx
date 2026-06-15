@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Users, Search, Plus, Edit2, Trash2, X, CheckCircle, AlertTriangle } from 'lucide-react'
+import { Users, Search, Plus, Edit2, Trash2, X, CheckCircle, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
 import Layout from '../components/Layout'
 
@@ -29,6 +29,9 @@ export default function StudentManagement() {
   const [deleteTarget,   setDeleteTarget]   = useState(null)
   const [toast,          setToast]          = useState(null)
   const [loading,        setLoading]        = useState(false)
+  // ✅ 정렬 상태 (좌석 정렬 기능)
+  const [sortField,      setSortField]      = useState('name')
+  const [sortDir,        setSortDir]        = useState('asc')
 
   useEffect(() => { fetchStudents() }, [])
 
@@ -46,6 +49,28 @@ export default function StudentManagement() {
       s.grade?.includes(search) || String(s.seat_number||'').includes(search)
     return matchStatus && matchSearch
   })
+
+  // ✅ 정렬 적용 (좌석, 이름 정렬)
+  const sorted = [...filtered].sort((a, b) => {
+    let valA, valB
+    if (sortField === 'seat') {
+      valA = a.seat_number ?? 9999
+      valB = b.seat_number ?? 9999
+      return sortDir === 'asc' ? valA - valB : valB - valA
+    }
+    // 기본: 이름순
+    valA = a.name || ''
+    valB = b.name || ''
+    return sortDir === 'asc'
+      ? valA.localeCompare(valB, 'ko')
+      : valB.localeCompare(valA, 'ko')
+  })
+
+  // ✅ 정렬 토글 함수
+  const toggleSort = (field) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortField(field); setSortDir('asc') }
+  }
 
   const showToast = (msg, type='success') => {
     setToast({ msg, type })
@@ -180,7 +205,43 @@ export default function StudentManagement() {
           <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'13px' }}>
             <thead>
               <tr>
-                {['좌석','이름','상태','학년','학교','학부모','학부모 전화','학생 전화','특이사항','메모','관리'].map(h => (
+                {/* ✅ 좌석 - 정렬 가능 */}
+                <th
+                  onClick={() => toggleSort('seat')}
+                  style={{
+                    ...cell, background:'#F8FAFC',
+                    fontSize:'11px', fontWeight:700, color: sortField==='seat' ? '#6366F1' : '#64748B',
+                    letterSpacing:'0.04em', textAlign:'left', whiteSpace:'nowrap',
+                    cursor:'pointer', userSelect:'none',
+                  }}
+                >
+                  <span style={{ display:'inline-flex', alignItems:'center', gap:'4px' }}>
+                    좌석
+                    {sortField === 'seat'
+                      ? (sortDir === 'asc' ? <ChevronUp size={12} style={{ color:'#6366F1' }} /> : <ChevronDown size={12} style={{ color:'#6366F1' }} />)
+                      : <span style={{ color:'#CBD5E1', fontSize:'10px' }}>↕</span>
+                    }
+                  </span>
+                </th>
+                {/* ✅ 이름 - 정렬 가능 */}
+                <th
+                  onClick={() => toggleSort('name')}
+                  style={{
+                    ...cell, background:'#F8FAFC',
+                    fontSize:'11px', fontWeight:700, color: sortField==='name' ? '#6366F1' : '#64748B',
+                    letterSpacing:'0.04em', textAlign:'left', whiteSpace:'nowrap',
+                    cursor:'pointer', userSelect:'none',
+                  }}
+                >
+                  <span style={{ display:'inline-flex', alignItems:'center', gap:'4px' }}>
+                    이름
+                    {sortField === 'name'
+                      ? (sortDir === 'asc' ? <ChevronUp size={12} style={{ color:'#6366F1' }} /> : <ChevronDown size={12} style={{ color:'#6366F1' }} />)
+                      : <span style={{ color:'#CBD5E1', fontSize:'10px' }}>↕</span>
+                    }
+                  </span>
+                </th>
+                {['상태','학년','학교','학부모','학부모 전화','학생 전화','첫등원일','특이사항','메모','관리'].map(h => (
                   <th key={h} style={{
                     ...cell, background:'#F8FAFC',
                     fontSize:'11px', fontWeight:700, color:'#64748B',
@@ -190,9 +251,9 @@ export default function StudentManagement() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {sorted.length === 0 ? (
                 <tr>
-                  <td colSpan={11} style={{ ...cell, textAlign:'center', padding:'64px 0' }}>
+                  <td colSpan={12} style={{ ...cell, textAlign:'center', padding:'64px 0' }}>
                     <Users size={32} style={{ color:'#E2E8F0', display:'block', margin:'0 auto 10px' }} />
                     <p style={{ color:'#94A3B8', fontSize:'14px' }}>
                       {search ? '검색 결과가 없어요' : `${statusFilter} 학생이 없어요`}
@@ -200,7 +261,7 @@ export default function StudentManagement() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((s, idx) => {
+                sorted.map((s, idx) => {
                   const isHigh = s.grade?.startsWith('고')
                   const status = s.status || '재원생'
                   const sStyle = STATUS_STYLE[status]
@@ -245,6 +306,15 @@ export default function StudentManagement() {
                       <td style={{ ...cell, color:'#64748B', fontFamily:'monospace', fontSize:'12px' }}>{s.parent_phone || '–'}</td>
                       {/* 학생 전화 */}
                       <td style={{ ...cell, color:'#64748B', fontFamily:'monospace', fontSize:'12px' }}>{s.student_phone || '–'}</td>
+                      {/* ✅ 첫등원일 */}
+                      <td style={{ ...cell, color:'#64748B', fontSize:'12px', whiteSpace:'nowrap' }}>
+                        {s.first_attendance_date
+                          ? <span style={{ padding:'2px 8px', borderRadius:'999px', fontSize:'11px', fontWeight:600, background:'#EEF2FF', color:'#4F46E5' }}>
+                              {s.first_attendance_date}
+                            </span>
+                          : <span style={{ color:'#CBD5E1' }}>–</span>
+                        }
+                      </td>
                       {/* ✅ 특이사항 */}
                       <td style={{ ...cell, textAlign:'center' }}>
                         {s.special_notes
@@ -310,6 +380,7 @@ function StudentModal({ student, onSave, onClose, loading }) {
     status:        student?.status        || '재원생',  // ✅ 추가
     special_notes: student?.special_notes || '',        // ✅ 추가
     memo:          student?.memo          || '',
+    first_attendance_date: student?.first_attendance_date || '',  // ✅ 첫등원일자
   })
   const [errors, setErrors] = useState({})
 
@@ -435,6 +506,24 @@ function StudentModal({ student, onSave, onClose, loading }) {
               style={inputStyle(false)}
               onFocus={e=>Object.assign(e.target.style,focusStyle)}
               onBlur={e=>Object.assign(e.target.style,blurStyle(false))} />
+          </Field>
+
+          {/* ✅ 첫등원일자 - 이 날짜 이전은 등원기록에 표시 안 됨 */}
+          <Field label="📅 첫등원일자 (이 날짜 이전은 등원기록에 미표시)">
+            <input
+              type="date"
+              value={form.first_attendance_date}
+              onChange={e => set('first_attendance_date', e.target.value)}
+              style={{
+                ...inputStyle(false),
+                border: '1.5px solid #C7D2FE', background: '#EEF2FF', color: '#4F46E5',
+              }}
+              onFocus={e => { e.target.style.borderColor='#6366F1'; e.target.style.boxShadow='0 0 0 3px rgba(99,102,241,0.1)' }}
+              onBlur={e  => { e.target.style.borderColor='#C7D2FE'; e.target.style.boxShadow='none' }}
+            />
+            <p style={{ fontSize:'11px', color:'#94A3B8', marginTop:'4px' }}>
+              💡 비워두면 스케줄 등록 시점부터 모든 날짜에 등원기록이 표시돼요
+            </p>
           </Field>
 
           {/* ✅ 특이사항 */}

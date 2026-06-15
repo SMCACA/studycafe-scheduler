@@ -56,10 +56,10 @@ export default function AttendanceManagement() {
     const dow     = new Date(selectedDate + 'T00:00:00').getDay()
     const slotKey = DAY_SLOT_KEYS[dow]
 
-    // ✅ 재원생만 불러오기 (schedules를 통해 student 조회)
+    // ✅ 재원생만 불러오기 (schedules를 통해 student 조회) + 첫등원일자 포함
     const { data: schedules, error } = await supabase
       .from('schedules')
-      .select('*, students(id,name,seat_number,school,grade,special_notes,status)')
+      .select('*, students(id,name,seat_number,school,grade,special_notes,status,first_attendance_date)')
 
     if (error || !schedules) { setLoading(false); return }
 
@@ -70,6 +70,9 @@ export default function AttendanceManagement() {
       // ✅ 재원생만 표시
       if (!Array.isArray(slots) || slots.length === 0 || !student) continue
       if ((student.status || '재원생') !== '재원생') continue
+
+      // ✅ 첫등원일자 체크: 선택한 날짜가 첫등원일 이전이면 등원기록에서 제외
+      if (student.first_attendance_date && selectedDate < student.first_attendance_date) continue
 
       // ✅ 오늘 해당 학생의 전체 교시 목록 저장
       const allPeriods = [...slots].sort((a,b) => a-b)
