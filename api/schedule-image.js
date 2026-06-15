@@ -87,7 +87,7 @@ function renderSection({ sectionLabel, sectionDays, allSlots, dayType, timeConfi
   const sectionColor = dayType === 'weekend' ? '#D97706' : '#4338CA'
   const sectionBg    = dayType === 'weekend' ? '#FEF3C7' : '#EEF2FF'
 
-  return h('div', { style: { marginBottom: 16 } },
+  return h('div', { style: { marginBottom: 16, display: 'flex', flexDirection: 'column' } },
     // 섹션 타이틀
     h('div', {
       style: {
