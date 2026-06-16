@@ -136,14 +136,12 @@ export default function StudentViewer() {
       return
     }
 
-    // ✅ 알림톡 템플릿 변수 (#{변수명} 자리에 들어갈 실제 값들)
+// ✅ 알림톡 템플릿 변수 (승인된 템플릿의 변수와 정확히 일치해야 함!)
+    // 템플릿에 있는 변수: #{학생이름}, #{좌석번호}, #{멤버십} ← 이 3개만!
     const variables = (selectedStudent && selectedSchedule) ? {
-      '#{학부모이름}': selectedStudent.parent_name || '학부모님',
       '#{학생이름}':   selectedStudent.name,
       '#{좌석번호}':   String(selectedStudent.seat_number ?? selectedSchedule?.seat_number ?? '미지정'),
       '#{멤버십}':     selectedSchedule?.membership_type || '–',
-      '#{총교시}':     String(totalPeriods),
-      '#{시간표링크}': imageUrl,
     } : undefined
 
     // ✅ 알림톡 버튼 (시간표 이미지 링크 버튼)
