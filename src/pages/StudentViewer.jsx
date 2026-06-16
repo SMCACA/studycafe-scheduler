@@ -142,27 +142,25 @@ export default function StudentViewer() {
     const linkWithoutProtocol = imageUrl.replace(/^https?:\/\//, '')
 
     // ✅ 알림톡 템플릿 변수 (#{변수명} 자리에 들어갈 실제 값들)
-    // ⚠️ 중요: 솔라피에 승인된 템플릿의 변수와 "정확히 일치"해야 발송됩니다!
-    //          (없는 변수를 보내거나, 빈 값을 보내면 카카오가 3109 "잘못된 파라미터"로 거부)
-    // 승인된 템플릿 변수: #{학생이름}, #{좌석번호}, #{멤버십}
-    // + 버튼 URL 변수: #{링크}  ← 버튼을 https://#{링크} 로 등록했기 때문에 반드시 필요!
-    //   ⚠️ '#{링크}' 부분은 솔라피 템플릿에 등록한 실제 변수명과 똑같이 맞추세요!
-    //      (만약 #{시간표링크} 로 등록했다면 아래 '#{링크}' 를 '#{시간표링크}' 로 변경)
+    // ⚠️ 솔라피 템플릿의 변수와 "정확히 일치"해야 발송됩니다!
+    //    (없는 변수를 보내거나, 빈 값을 보내면 카카오가 3109 "잘못된 파라미터"로 거부)
+    // 템플릿 변수 4개: #{학생이름}, #{좌석번호}, #{멤버십}, #{시간표링크}(버튼 URL용)
     const variables = (selectedStudent && selectedSchedule) ? {
-      '#{학생이름}':   selectedStudent.name,
-      '#{좌석번호}':   String(selectedStudent.seat_number ?? selectedSchedule?.seat_number ?? '미지정'),
-      '#{멤버십}':     selectedSchedule?.membership_type || '–',
-      '#{시간표링크}':       linkWithoutProtocol,   // ← 버튼 URL 변수 (https:// 뗀 나머지)
+      '#{학생이름}':     selectedStudent.name,
+      '#{좌석번호}':     String(selectedStudent.seat_number ?? selectedSchedule?.seat_number ?? '미지정'),
+      '#{멤버십}':       selectedSchedule?.membership_type || '–',
+      '#{시간표링크}':   linkWithoutProtocol,   // ← 버튼 URL 변수 (https:// 뗀 나머지)
     } : undefined
 
     // ✅ 알림톡 버튼 (시간표 이미지 링크 버튼)
-    // ⚠️ 버튼 URL을 변수(https://#{링크})로 등록했으므로,
-    //    여기서도 linkMo/linkPc를 "템플릿에 등록한 그대로" (https://#{링크}) 보내야 함.
-    //    실제 값은 위 variables의 '#{링크}'로 채워짐.
-    //    buttonName은 솔라피 템플릿의 버튼 이름과 똑같아야 함 (이모지 제외!)
+    // ⚠️ 버튼 URL을 변수(https://#{시간표링크})로 등록했으므로,
+    //    여기서도 linkMo/linkPc를 "템플릿에 등록한 그대로" (https://#{시간표링크}) 보내야 함.
+    //    실제 값은 위 variables의 '#{시간표링크}'로 채워짐.
+    // ⚠️ buttonName은 솔라피 템플릿의 버튼 이름과 "이모지까지" 똑같아야 함!
+    //    템플릿 버튼명: 📅 시간표 확인하기  ← 캘린더 이모지(📅) + 공백 포함 정확히 일치
     const buttons = [{
-      buttonType: 'WL',                  // WL = Web Link (웹 링크 버튼 유형)
-      buttonName: '시간표 확인하기',      // 템플릿 버튼명과 정확히 일치
+      buttonType: 'WL',                       // WL = Web Link (웹 링크 버튼 유형)
+      buttonName: '📅 시간표 확인하기',         // ⚠️ 템플릿과 동일하게 이모지 포함!
       linkMo: 'https://#{시간표링크}',          // 템플릿 등록값 그대로 (변수로 치환됨)
       linkPc: 'https://#{시간표링크}',
     }]
