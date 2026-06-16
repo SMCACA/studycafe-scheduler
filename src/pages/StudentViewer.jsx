@@ -136,8 +136,10 @@ export default function StudentViewer() {
       return
     }
 
-// ✅ 알림톡 템플릿 변수 (승인된 템플릿의 변수와 정확히 일치해야 함!)
-    // 템플릿에 있는 변수: #{학생이름}, #{좌석번호}, #{멤버십} ← 이 3개만!
+    // ✅ 알림톡 템플릿 변수 (#{변수명} 자리에 들어갈 실제 값들)
+    // ⚠️ 중요: 솔라피에 승인된 템플릿의 변수와 "정확히 일치"해야 발송됩니다!
+    //          (없는 변수를 보내면 카카오가 3109 "잘못된 파라미터"로 거부)
+    // 승인된 템플릿 변수: #{학생이름}, #{좌석번호}, #{멤버십}  ← 딱 이 3개만!
     const variables = (selectedStudent && selectedSchedule) ? {
       '#{학생이름}':   selectedStudent.name,
       '#{좌석번호}':   String(selectedStudent.seat_number ?? selectedSchedule?.seat_number ?? '미지정'),
