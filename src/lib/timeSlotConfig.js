@@ -90,6 +90,23 @@ export async function saveTimeConfig(supabase, config) {
   if (error) throw error
 }
 
+// ─────────────────────────────────────────────────────────
+//  ✅ 사이트 주소 (알림톡 버튼 URL 생성에 사용)
+//  window.location.origin은 브라우저에서만 값이 있고,
+//  알림톡 발송 시점에는 비어서 'https://' 만 남는 문제가 있었음 → 3109 에러
+//  ➡ 실제 배포 주소를 고정값으로 박아서 항상 완전한 URL이 되도록 함
+//  ⚠️ 도메인이 바뀌면 아래 SITE_ORIGIN 값만 새 주소로 변경하세요!
+// ─────────────────────────────────────────────────────────
+const SITE_ORIGIN = 'https://studycafe-scheduler.vercel.app'
+
+/** 현재 사이트 주소를 안전하게 반환 (브라우저면 현재 주소, 아니면 고정 주소) */
+function getOrigin() {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin
+  }
+  return SITE_ORIGIN
+}
+
 /**
  * 시간표 데이터를 URL 파라미터용 Base64 문자열로 인코딩 (내부 공통 함수)
  * timeConfig는 { weekday: {...}, weekend: {...} } 구조로 전달
@@ -119,7 +136,7 @@ function encodeSchedulePayload(student, schedule, timeConfig) {
  */
 export function buildImageUrl(student, schedule, timeConfig) {
   const encoded = encodeSchedulePayload(student, schedule, timeConfig)
-  return `${window.location.origin}/api/schedule-image?data=${encoded}`
+  return `${getOrigin()}/api/schedule-image?data=${encoded}`
 }
 
 /**
@@ -127,5 +144,5 @@ export function buildImageUrl(student, schedule, timeConfig) {
  */
 export function buildPublicUrl(student, schedule, timeConfig) {
   const encoded = encodeSchedulePayload(student, schedule, timeConfig)
-  return `${window.location.origin}/view?data=${encoded}`
+  return `${getOrigin()}/view?data=${encoded}`
 }
