@@ -147,12 +147,7 @@ export default function StudentViewer() {
     } : undefined
 
     // ✅ 알림톡 버튼 (시간표 이미지 링크 버튼)
-    const buttons = imageUrl ? [{
-      buttonType: 'WL',              // WL = Web Link (웹 링크 버튼 유형)
-      buttonName: '📅 시간표 확인하기',
-      linkMo: imageUrl,              // 모바일에서 클릭 시 열릴 URL
-      linkPc: imageUrl,              // PC에서 클릭 시 열릴 URL
-    }] : undefined
+    const buttons = undefined
 
     setSending(true)
     setSendResult(null)
