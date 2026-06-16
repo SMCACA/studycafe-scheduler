@@ -147,7 +147,18 @@ export default function StudentViewer() {
     } : undefined
 
     // ✅ 알림톡 버튼 (시간표 이미지 링크 버튼)
+    // ⚠️ [진단 테스트] 버튼을 임시로 빼고 발송합니다.
+    //    버튼 없이 보내서 성공하면 → 버튼이 3109 원인 (아래 원래 코드로 복구 후 버튼 설정 수정)
+    //    여전히 3109면        → 채널 연동/휴면 문제 (솔라피 고객센터 문의 필요)
     const buttons = undefined
+
+    // ── 원래 버튼 코드 (테스트 성공 후 이걸로 되돌리세요) ──
+    // const buttons = imageUrl ? [{
+    //   buttonType: 'WL',              // WL = Web Link (웹 링크 버튼 유형)
+    //   buttonName: '시간표 확인하기',  // ⚠️ 솔라피 템플릿에 등록된 버튼 이름과 똑같이!
+    //   linkMo: imageUrl,
+    //   linkPc: imageUrl,
+    // }] : undefined
 
     setSending(true)
     setSendResult(null)
