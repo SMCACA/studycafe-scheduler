@@ -136,26 +136,36 @@ export default function StudentViewer() {
       return
     }
 
+    // ✅ 알림톡 버튼 링크용: imageUrl에서 'https://' 부분을 뗀 나머지
+    //    (솔라피 규정: 버튼 URL을 변수로 등록할 때 https:// 프로토콜은 고정영역이라
+    //     변수값에는 그 뒷부분만 넣어야 함. 템플릿 버튼이 https://#{링크} 형태이기 때문)
+    const linkWithoutProtocol = imageUrl.replace(/^https?:\/\//, '')
+
     // ✅ 알림톡 템플릿 변수 (#{변수명} 자리에 들어갈 실제 값들)
     // ⚠️ 중요: 솔라피에 승인된 템플릿의 변수와 "정확히 일치"해야 발송됩니다!
-    //          (없는 변수를 보내면 카카오가 3109 "잘못된 파라미터"로 거부)
-    // 승인된 템플릿 변수: #{학생이름}, #{좌석번호}, #{멤버십}  ← 딱 이 3개만!
+    //          (없는 변수를 보내거나, 빈 값을 보내면 카카오가 3109 "잘못된 파라미터"로 거부)
+    // 승인된 템플릿 변수: #{학생이름}, #{좌석번호}, #{멤버십}
+    // + 버튼 URL 변수: #{링크}  ← 버튼을 https://#{링크} 로 등록했기 때문에 반드시 필요!
+    //   ⚠️ '#{링크}' 부분은 솔라피 템플릿에 등록한 실제 변수명과 똑같이 맞추세요!
+    //      (만약 #{시간표링크} 로 등록했다면 아래 '#{링크}' 를 '#{시간표링크}' 로 변경)
     const variables = (selectedStudent && selectedSchedule) ? {
       '#{학생이름}':   selectedStudent.name,
       '#{좌석번호}':   String(selectedStudent.seat_number ?? selectedSchedule?.seat_number ?? '미지정'),
       '#{멤버십}':     selectedSchedule?.membership_type || '–',
+      '#{시간표링크}':       linkWithoutProtocol,   // ← 버튼 URL 변수 (https:// 뗀 나머지)
     } : undefined
 
     // ✅ 알림톡 버튼 (시간표 이미지 링크 버튼)
-    // ⚠️ buttonName은 솔라피 템플릿에 등록된 버튼 이름과 똑같아야 함 (이모지 제외!)
-    // ⚠️ imageUrl이 'https://...studycafe-scheduler.vercel.app/...' 처럼
-    //    완전한 주소여야 함 (origin 고정으로 해결됨)
-    const buttons = imageUrl ? [{
-      buttonType: 'WL',              // WL = Web Link (웹 링크 버튼 유형)
-      buttonName: '시간표 확인하기',  // 이모지 빼고 템플릿 버튼명과 일치
-      linkMo: imageUrl,              // 모바일에서 클릭 시 열릴 URL
-      linkPc: imageUrl,              // PC에서 클릭 시 열릴 URL
-    }] : undefined
+    // ⚠️ 버튼 URL을 변수(https://#{링크})로 등록했으므로,
+    //    여기서도 linkMo/linkPc를 "템플릿에 등록한 그대로" (https://#{링크}) 보내야 함.
+    //    실제 값은 위 variables의 '#{링크}'로 채워짐.
+    //    buttonName은 솔라피 템플릿의 버튼 이름과 똑같아야 함 (이모지 제외!)
+    const buttons = [{
+      buttonType: 'WL',                  // WL = Web Link (웹 링크 버튼 유형)
+      buttonName: '시간표 확인하기',      // 템플릿 버튼명과 정확히 일치
+      linkMo: 'https://#{시간표링크}',          // 템플릿 등록값 그대로 (변수로 치환됨)
+      linkPc: 'https://#{시간표링크}',
+    }]
 
     setSending(true)
     setSendResult(null)
