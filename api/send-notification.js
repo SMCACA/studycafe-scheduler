@@ -48,9 +48,10 @@ export default async function handler(req, res) {
 
   // to        = 학부모/학생 전화번호 (수신자)
   // text      = 보낼 메시지 내용 (알림톡 실패 시 SMS 대체용)
-  // type      = 'schedule'(스케줄) 또는 'reward'(상벌점)
+  // type      = 'schedule'(시간표) / 'penalty'(벌점) / 'reward'(상점) 중 하나
+  //             → 이 값에 따라 위 TEMPLATE_ID_MAP에서 템플릿이 자동으로 골라집니다
   // variables = #{학생이름} 같은 자리에 들어갈 실제 값들
-  // buttons   = 알림톡 버튼 (시간표 링크 등)
+  // buttons   = 알림톡 버튼 (시간표 링크 등, 상점/벌점에는 보통 필요 없음)
 
   // 필수값 체크
   if (!to || !text) {
@@ -62,8 +63,22 @@ export default async function handler(req, res) {
   const apiSecret   = process.env.SOLAPI_API_SECRET    // Solapi API Secret
   const fromNumber  = process.env.SOLAPI_FROM_NUMBER   // 발신번호 (등록된 번호)
   const pfId        = process.env.SOLAPI_PF_ID         // 카카오 채널 ID (알림톡용)
-  // ✅ [수정 2] templateId 환경변수 읽기 추가 (KA01TP000... 형식)
-  const templateId  = process.env.SOLAPI_TEMPLATE_ID   // 승인된 알림톡 템플릿 ID
+  // ✅ [수정 4] type별로 다른 템플릿을 쓰도록 매핑표 추가
+  //    비유: 우체국 창구에 양식이 여러 개 있는 것과 같아요.
+  //    "시간표 안내"용 양식, "벌점 안내"용 양식, "상점 안내"용 양식이 각각 다름.
+  //    프론트엔드에서 보낸 type 값(schedule / penalty / reward)에 맞는
+  //    템플릿ID를 Vercel 환경변수에서 골라옵니다.
+  const TEMPLATE_ID_MAP = {
+    schedule: process.env.SOLAPI_TEMPLATE_ID,           // 기존: 시간표 안내
+    penalty:  process.env.SOLAPI_TEMPLATE_ID_PENALTY,   // 신규: 벌점 안내
+    reward:   process.env.SOLAPI_TEMPLATE_ID_REWARD,    // 신규: 상점 안내
+  }
+  // type이 매핑표에 있는 종류(schedule/penalty/reward)면 그 값을 그대로 쓰고,
+  // (아직 승인 전이라 값이 비어있어도 그대로 비워둠 → 아래에서 안전하게 SMS로 대체됨)
+  // type이 매핑표에 없는 경우에만 예전처럼 기본 템플릿(SOLAPI_TEMPLATE_ID)으로 대체
+  const templateId = (type in TEMPLATE_ID_MAP)
+    ? TEMPLATE_ID_MAP[type]
+    : process.env.SOLAPI_TEMPLATE_ID
 
   // 필수 환경변수 누락 시 에러
   if (!apiKey || !apiSecret || !fromNumber) {
