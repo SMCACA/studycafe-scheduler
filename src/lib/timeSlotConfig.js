@@ -108,11 +108,11 @@ function getOrigin() {
 }
 
 /**
- * 시간표 데이터를 URL 파라미터용 Base64 문자열로 인코딩 (내부 공통 함수)
+ * 시간표 데이터를 깔끔한 객체(payload)로 정리 (내부 공통 함수)
  * timeConfig는 { weekday: {...}, weekend: {...} } 구조로 전달
  */
-function encodeSchedulePayload(student, schedule, timeConfig) {
-  const payload = {
+function buildSchedulePayload(student, schedule, timeConfig) {
+  return {
     name:       student.name,
     grade:      student.grade || '',
     seat:       student.seat_number ?? schedule?.seat_number ?? '',
@@ -128,21 +128,44 @@ function encodeSchedulePayload(student, schedule, timeConfig) {
     },
     timeConfig,  // ✅ { weekday: {...}, weekend: {...} } 구조
   }
-  return btoa(encodeURIComponent(JSON.stringify(payload)))
 }
 
 /**
- * 시간표 PNG 이미지 URL 생성 (알림톡 버튼에 사용)
+ * ✅ 시간표 데이터를 Supabase 창고에 저장하고 "짧은 ID"를 받아옴
+ *    (비유: 택배 내용물을 창고에 맡기고 보관번호를 받는 단계)
+ *    발송 직전에 한 번 호출하면 됩니다.
+ * @returns {Promise<string>} 짧은 ID (예: 'k7f3a9b2')
  */
-export function buildImageUrl(student, schedule, timeConfig) {
-  const encoded = encodeSchedulePayload(student, schedule, timeConfig)
-  return `${getOrigin()}/api/schedule-image?data=${encoded}`
+export async function saveSnapshot(student, schedule, timeConfig) {
+  const payload = buildSchedulePayload(student, schedule, timeConfig)
+
+  const res = await fetch('/api/save-snapshot', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ payload }),
+  })
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.error || `시간표 저장 실패 (${res.status})`)
+  }
+
+  const { id } = await res.json()
+  if (!id) throw new Error('시간표 저장 응답에 ID가 없습니다')
+  return id
 }
 
 /**
- * 학생 스케줄 공개 링크 생성 (HTML 웹페이지 - 관리자 참고용)
+ * ✅ 짧은 ID로 시간표 이미지 URL 생성 (알림톡 버튼에 사용)
+ *    예: https://.../api/schedule-image?id=k7f3a9b2  ← 아주 짧음!
  */
-export function buildPublicUrl(student, schedule, timeConfig) {
-  const encoded = encodeSchedulePayload(student, schedule, timeConfig)
-  return `${getOrigin()}/view?data=${encoded}`
+export function buildImageUrlFromId(id) {
+  return `${getOrigin()}/api/schedule-image?id=${id}`
+}
+
+/**
+ * ✅ 짧은 ID로 공개 웹페이지 URL 생성 (관리자 참고용)
+ */
+export function buildPublicUrlFromId(id) {
+  return `${getOrigin()}/view?id=${id}`
 }

@@ -3,7 +3,7 @@ import Layout from '../components/Layout'
 import { createClient } from '@supabase/supabase-js'
 import { Eye, Copy, CheckCheck, MessageSquare, ChevronDown, Loader, Link, Clock } from 'lucide-react'
 import { sendNotificationMulti } from '../lib/sendNotification'
-import { loadTimeConfig, buildPublicUrl, buildImageUrl, DEFAULT_TIME_CONFIG } from '../lib/timeSlotConfig'
+import { loadTimeConfig, saveSnapshot, buildImageUrlFromId, DEFAULT_TIME_CONFIG } from '../lib/timeSlotConfig'
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -73,22 +73,22 @@ export default function StudentViewer() {
   const totalPeriods = activeDays.reduce((sum, d) =>
     sum + (selectedSchedule?.[d.key]?.length || 0), 0)
 
-  // 관리자 참고용 HTML 웹페이지 링크
-  const publicUrl = (selectedStudent && selectedSchedule)
-    ? buildPublicUrl(selectedStudent, selectedSchedule, timeConfig)
-    : ''
+  // 관리자 참고용 링크는 "링크 복사" 버튼 누를 때 즉석에서 생성합니다 (아래 handleLinkCopy)
+  const [copiedUrl, setCopiedUrl] = useState('')   // 마지막으로 만든 이미지 URL 보관용
 
-  // ✅ 알림톡 버튼 링크 (클릭 시 시간표 이미지로 바로 보임)
-  const imageUrl = (selectedStudent && selectedSchedule)
-    ? buildImageUrl(selectedStudent, selectedSchedule, timeConfig)
-    : ''
-
-  // 링크 복사
+  // 링크 복사: 그 자리에서 창고에 저장 → 짧은 ID → 짧은 URL 복사
   const handleLinkCopy = async () => {
-    if (!imageUrl) return
-    await navigator.clipboard.writeText(imageUrl)
-    setLinkCopied(true)
-    setTimeout(() => setLinkCopied(false), 2500)
+    if (!selectedStudent || !selectedSchedule) return
+    try {
+      const id  = await saveSnapshot(selectedStudent, selectedSchedule, timeConfig)
+      const url = buildImageUrlFromId(id)
+      setCopiedUrl(url)
+      await navigator.clipboard.writeText(url)
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2500)
+    } catch (err) {
+      alert(`링크 생성 실패: ${err.message}`)
+    }
   }
 
   const buildMessageText = () => {
@@ -136,37 +136,43 @@ export default function StudentViewer() {
       return
     }
 
-    // ✅ 알림톡 버튼 링크용: imageUrl에서 'https://' 부분을 뗀 나머지
-    //    (솔라피 규정: 버튼 URL을 변수로 등록할 때 https:// 프로토콜은 고정영역이라
-    //     변수값에는 그 뒷부분만 넣어야 함. 템플릿 버튼이 https://#{링크} 형태이기 때문)
-    const linkWithoutProtocol = imageUrl.replace(/^https?:\/\//, '')
+    // ✅ [핵심] 발송 직전에 시간표를 창고(Supabase)에 저장하고 짧은 ID를 받음
+    //    → 이렇게 하면 버튼 URL이 https://도메인/api/schedule-image?id=k7f3a9b2 로 아주 짧아짐
+    //    (예전엔 데이터를 통째로 Base64로 넣어 600~700자 → 카카오 한도 초과 → 3109)
+    setSending(true)
+    setSendResult(null)
+
+    let linkWithoutProtocol
+    try {
+      const id  = await saveSnapshot(selectedStudent, selectedSchedule, timeConfig)
+      const imageUrl = buildImageUrlFromId(id)
+      // 솔라피 규정: 버튼 URL을 변수로 등록할 때 https:// 는 고정영역이라 변수엔 뒷부분만 넣음
+      linkWithoutProtocol = imageUrl.replace(/^https?:\/\//, '')
+    } catch (err) {
+      setSendResult({ ok:false, msg:`시간표 저장 실패: ${err.message}` })
+      setSending(false)
+      return
+    }
 
     // ✅ 알림톡 템플릿 변수 (#{변수명} 자리에 들어갈 실제 값들)
     // ⚠️ 솔라피 템플릿의 변수와 "정확히 일치"해야 발송됩니다!
-    //    (없는 변수를 보내거나, 빈 값을 보내면 카카오가 3109 "잘못된 파라미터"로 거부)
     // 템플릿 변수 4개: #{학생이름}, #{좌석번호}, #{멤버십}, #{시간표링크}(버튼 URL용)
-    const variables = (selectedStudent && selectedSchedule) ? {
+    const variables = {
       '#{학생이름}':     selectedStudent.name,
       '#{좌석번호}':     String(selectedStudent.seat_number ?? selectedSchedule?.seat_number ?? '미지정'),
       '#{멤버십}':       selectedSchedule?.membership_type || '–',
-      '#{시간표링크}':   linkWithoutProtocol,   // ← 버튼 URL 변수 (https:// 뗀 나머지)
-    } : undefined
+      '#{시간표링크}':   linkWithoutProtocol,   // ← 이제 아주 짧은 URL (id 방식)
+    }
 
     // ✅ 알림톡 버튼 (시간표 이미지 링크 버튼)
-    // ⚠️ 버튼 URL을 변수(https://#{시간표링크})로 등록했으므로,
-    //    여기서도 linkMo/linkPc를 "템플릿에 등록한 그대로" (https://#{시간표링크}) 보내야 함.
-    //    실제 값은 위 variables의 '#{시간표링크}'로 채워짐.
-    // ⚠️ buttonName은 솔라피 템플릿의 버튼 이름과 "이모지까지" 똑같아야 함!
-    //    템플릿 버튼명: 📅 시간표 확인하기  ← 캘린더 이모지(📅) + 공백 포함 정확히 일치
+    //    템플릿 버튼명은 이모지까지 동일해야 함: 📅 시간표 확인하기
     const buttons = [{
       buttonType: 'WL',                       // WL = Web Link (웹 링크 버튼 유형)
-      buttonName: '📅 시간표 확인하기',         // ⚠️ 템플릿과 동일하게 이모지 포함!
+      buttonName: '📅 시간표 확인하기',
       linkMo: 'https://#{시간표링크}',          // 템플릿 등록값 그대로 (변수로 치환됨)
       linkPc: 'https://#{시간표링크}',
     }]
 
-    setSending(true)
-    setSendResult(null)
     try {
       await sendNotificationMulti({ targets, text, type:'schedule', variables, buttons })
       setSendResult({ ok:true, msg:`📨 ${targets.map(t=>t.label).join(', ')}에게 발송 완료!` })
@@ -331,7 +337,8 @@ export default function StudentViewer() {
                 <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
                   <input
                     readOnly
-                    value={imageUrl}
+                    value={copiedUrl}
+                    placeholder="복사 버튼을 누르면 짧은 링크가 생성됩니다"
                     style={{
                       flex:1, padding:'7px 10px', borderRadius:'8px', fontSize:'11px',
                       border:'1px solid #FDE68A', background:'#fff', color:'#64748B',

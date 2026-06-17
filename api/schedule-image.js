@@ -3,6 +3,13 @@
 // ================================================================
 
 import { ImageResponse } from '@vercel/og'
+import { createClient } from '@supabase/supabase-js'
+
+// ✅ 창고(Supabase)에서 시간표 꺼내올 때 사용
+const supabase = createClient(
+  process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY
+)
 
 const DAY_KEYS = [
   { key: 'mon_slots', label: '월', weekend: false },
@@ -183,18 +190,36 @@ function renderSection({ sectionLabel, sectionDays, allSlots, dayType, timeConfi
 
 export default async function handler(req, res) {
   const url = new URL(req.url, `https://${req.headers.host}`)
-  const raw = url.searchParams.get('data')
-
-  if (!raw) {
-    res.status(400).send('data 파라미터가 없어요')
-    return
-  }
+  const id  = url.searchParams.get('id')
+  const raw = url.searchParams.get('data')   // 구버전 Base64 링크 하위 호환
 
   let data
-  try {
-    data = JSON.parse(decodeURIComponent(atob(raw)))
-  } catch {
-    res.status(400).send('잘못된 링크입니다')
+
+  if (id) {
+    // ✅ 새 방식: 짧은 ID → 창고(Supabase)에서 내용물 꺼내기
+    const { data: row, error } = await supabase
+      .from('schedule_snapshots')
+      .select('payload')
+      .eq('id', id)
+      .single()
+
+    if (error || !row) {
+      res.status(404).send('시간표를 찾을 수 없습니다 (만료되었거나 잘못된 링크)')
+      return
+    }
+    data = row.payload
+
+  } else if (raw) {
+    // 구버전 하위 호환: ?data=<Base64>
+    try {
+      data = JSON.parse(decodeURIComponent(atob(raw)))
+    } catch {
+      res.status(400).send('잘못된 링크입니다')
+      return
+    }
+
+  } else {
+    res.status(400).send('id 파라미터가 없어요')
     return
   }
 
