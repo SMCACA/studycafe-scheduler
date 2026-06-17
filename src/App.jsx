@@ -6,6 +6,7 @@ import ScheduleManagement from './pages/ScheduleManagement'
 import AttendanceManagement from './pages/AttendanceManagement'
 import StudentViewer from './pages/StudentViewer'
 import RewardNotification from './pages/RewardNotification'
+import StudentPoints from './pages/StudentPoints'   // ✅ 신규: 상벌점 관리
 import StaffManagement from './pages/StaffManagement'   // ✅ 신규
 import PublicScheduleView from './pages/PublicScheduleView' // ✅ 공개 시간표 뷰
 import ProtectedRoute from './components/ProtectedRoute'
@@ -38,6 +39,11 @@ export default function App() {
         } />
         <Route path="/notifications/rewards" element={
           <ProtectedRoute><RewardNotification /></ProtectedRoute>
+        } />
+
+        {/* ✅ 상벌점 관리 */}
+        <Route path="/points" element={
+          <ProtectedRoute><StudentPoints /></ProtectedRoute>
         } />
 
         {/* ✅ 직원 근무표 */}

@@ -4,7 +4,7 @@ import logoSrc from '../assets/smc_logo.png'
 import {
   LayoutDashboard, Users, CalendarDays, MessageSquare,
   LogOut, ChevronDown, ChevronRight, ClipboardList, Eye, BookOpen, Star,
-  UserCheck,  // ✅ 직원 아이콘
+  UserCheck, Award,  // ✅ 직원 아이콘 + 상벌점 아이콘
 } from 'lucide-react'
 
 const SIDEBAR_W = 400
@@ -13,6 +13,7 @@ const TOPBAR_H  = 58
 const menuItems = [
   { label: '대시보드',  path: '/dashboard',  icon: LayoutDashboard },
   { label: '학생 관리', path: '/students',   icon: Users },
+  { label: '상벌점 관리', path: '/points',   icon: Award },
   {
     label: '스케줄 관리', path: '/schedules', icon: CalendarDays,
     children: [
@@ -34,6 +35,7 @@ function getPageTitle(p) {
   const map = {
     '/dashboard':              '대시보드',
     '/students':               '학생 관리',
+    '/points':                 '상벌점 관리',
     '/schedules':              '스케줄 설정',
     '/schedules/attendance':   '등원 기록',
     '/notifications/schedule': '스케줄 알림톡',

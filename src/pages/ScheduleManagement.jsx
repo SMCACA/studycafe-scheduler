@@ -35,6 +35,19 @@ const isDayAvailable = (membership, dayType) => {
   return false
 }
 
+// ✅ 첫등원 임박 뱃지 계산 (첫등원일 3일 전 ~ 당일까지 표시)
+const getFirstAttendanceBadge = (dateStr) => {
+  if (!dateStr) return null
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const target = new Date(dateStr); target.setHours(0, 0, 0, 0)
+  const diffDays = Math.round((target - today) / 86400000)
+  if (diffDays < 0 || diffDays > 3) return null
+  return {
+    diff: diffDays,
+    text: diffDays === 0 ? '오늘 첫등원!' : `D-${diffDays} 첫등원 예정`,
+  }
+}
+
 const EMPTY_FORM = {
   student_id:'', seat_number:'', membership_type:'풀',
   mon_slots:[], tue_slots:[], wed_slots:[],
@@ -426,6 +439,13 @@ export default function ScheduleManagement() {
               }}>✕</span>
               회원권 외 요일
             </span>
+            <span style={{ display:'flex', alignItems:'center', gap:'6px', fontSize:'12px', color:'#64748B' }}>
+              <span style={{
+                padding:'2px 7px', borderRadius:'999px', fontSize:'10px', fontWeight:800,
+                background:'#FFEDD5', color:'#C2410C', border:'1px solid #FED7AA',
+              }}>🔥 D-3</span>
+              첫등원 3일 전부터 표시
+            </span>
             <span style={{ marginLeft:'auto', fontSize:'12px', color:'#6366F1', fontWeight:600 }}>
               💡 행 클릭 → 스케줄 편집
             </span>
@@ -528,7 +548,10 @@ export default function ScheduleManagement() {
                   ) : (
                     displayStudents.map((student, rowIdx) => {
                       const schedule = getSchedule(student.id)
-                      const rowBg = rowIdx % 2 === 0 ? '#fff' : '#FAFBFF'
+                      const ddayBadge = getFirstAttendanceBadge(student.first_attendance_date)
+                      const rowBg = ddayBadge
+                        ? (ddayBadge.diff === 0 ? '#FFFBEB' : '#FFF7ED')
+                        : (rowIdx % 2 === 0 ? '#fff' : '#FAFBFF')
                       return (
                         <tr
                           key={student.id}
@@ -583,7 +606,22 @@ export default function ScheduleManagement() {
                             padding:'8px 10px', fontWeight:700, color:'#0F172A',
                             whiteSpace:'nowrap', fontSize:'13px',
                           }}>
-                            {student.name}
+                            <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
+                              {student.name}
+                              {ddayBadge && (
+                                <span title="첫등원 임박" style={{
+                                  display:'inline-flex', alignItems:'center', gap:'3px',
+                                  padding:'2px 7px', borderRadius:'999px',
+                                  fontSize:'10px', fontWeight:800, whiteSpace:'nowrap',
+                                  background: ddayBadge.diff === 0 ? '#FEF08A' : '#FFEDD5',
+                                  color:      ddayBadge.diff === 0 ? '#854D0E' : '#C2410C',
+                                  border: `1px solid ${ddayBadge.diff === 0 ? '#FDE047' : '#FED7AA'}`,
+                                  animation: 'ddayPulse 1.4s ease-in-out infinite',
+                                }}>
+                                  🔥 {ddayBadge.text}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           {/* 학년 */}
                           <td style={{
