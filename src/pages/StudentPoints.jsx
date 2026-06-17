@@ -3,7 +3,7 @@ import Layout from '../components/Layout'
 import { createClient } from '@supabase/supabase-js'
 import {
   Star, AlertTriangle, Plus, Trash2, Award,
-  ChevronLeft, ChevronRight, Calendar, Loader,
+  ChevronLeft, ChevronRight, Calendar, Loader, Settings, X,
 } from 'lucide-react'
 
 const supabase = createClient(
@@ -41,6 +41,15 @@ const typeBadge = (type) =>
     ? { bg: '#FFFBEB', color: '#D97706', border: '#FDE68A' }
     : { bg: '#FFF1F2', color: '#E11D48', border: '#FECDD3' }
 
+/* ── 사유 드롭다운 템플릿 (브라우저에 저장되는 목록) ── */
+const REASON_STORAGE_KEY = 'smc_point_reasons'
+const DEFAULT_REASONS = [
+  { id: 'r1', type: '상점', title: '성실한 출석' },
+  { id: 'r2', type: '상점', title: '시험 성적 향상' },
+  { id: 'r3', type: '벌점', title: '무단 결석' },
+  { id: 'r4', type: '벌점', title: '규정 위반' },
+]
+
 export default function StudentPoints() {
   const [students,  setStudents]  = useState([])
   const [activeTab, setActiveTab] = useState('register') // 'register' | 'monthly'
@@ -55,6 +64,11 @@ export default function StudentPoints() {
   const [saving,      setSaving]      = useState(false)
   const [recent,      setRecent]      = useState([])
   const [recentLoading, setRecentLoading] = useState(false)
+
+  /* ── 사유 드롭다운 관리 상태 ── */
+  const [reasonTemplates,    setReasonTemplates]    = useState([])
+  const [showReasonManager,  setShowReasonManager]  = useState(false)
+  const [newReasonText,      setNewReasonText]      = useState('')
 
   /* ── 월별 조회 상태 ── */
   const [selectedMonth,    setSelectedMonth]    = useState(() => {
@@ -106,6 +120,49 @@ export default function StudentPoints() {
   useEffect(() => {
     if (activeTab === 'monthly') fetchMonthRecords(selectedMonth)
   }, [activeTab, selectedMonth, fetchMonthRecords])
+
+  /* ── 사유 템플릿 불러오기 (최초 1회) ── */
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(REASON_STORAGE_KEY)
+      setReasonTemplates(saved ? JSON.parse(saved) : DEFAULT_REASONS)
+    } catch {
+      setReasonTemplates(DEFAULT_REASONS)
+    }
+  }, [])
+
+  /* ── 사유 템플릿 저장 헬퍼 ── */
+  const saveReasonTemplates = (list) => {
+    localStorage.setItem(REASON_STORAGE_KEY, JSON.stringify(list))
+    setReasonTemplates(list)
+  }
+
+  /* ── 현재 선택된 구분(상점/벌점)에 해당하는 사유 목록 ── */
+  const filteredReasons = useMemo(
+    () => reasonTemplates.filter(r => r.type === type),
+    [reasonTemplates, type]
+  )
+
+  /* ── 새 사유 추가 ── */
+  const handleAddReason = () => {
+    const title = newReasonText.trim()
+    if (!title) return
+    if (filteredReasons.some(r => r.title === title)) {
+      showToast('이미 등록된 사유예요', 'error')
+      return
+    }
+    const updated = [...reasonTemplates, { id: Date.now().toString(), type, title }]
+    saveReasonTemplates(updated)
+    setReason(title)
+    setNewReasonText('')
+    showToast('새 사유를 등록했어요 ✏️')
+  }
+
+  /* ── 사유 삭제 ── */
+  const handleDeleteReason = (id, title) => {
+    saveReasonTemplates(reasonTemplates.filter(r => r.id !== id))
+    if (reason === title) setReason('')
+  }
 
   const selectedStudent = students.find(s => s.id === selectedId)
   const canSave = selectedId && reason.trim() && Number(points) > 0
@@ -263,7 +320,7 @@ export default function StudentPoints() {
               </label>
               <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
                 {['상점', '벌점'].map(tp => (
-                  <button key={tp} onClick={() => setType(tp)} style={{
+                  <button key={tp} onClick={() => { setType(tp); setReason('') }} style={{
                     flex: 1, padding: '10px 0', borderRadius: '10px',
                     border: type === tp ? 'none' : '1.5px solid #E2E8F0',
                     background: type === tp
@@ -287,13 +344,73 @@ export default function StudentPoints() {
                 onChange={e => setPoints(e.target.value)}
                 style={{ ...inputStyle, marginBottom: '14px' }} />
 
-              {/* 사유 입력 */}
-              <label style={{ fontSize: '12px', fontWeight: 600, color: '#64748B', display: 'block', marginBottom: '6px' }}>
-                사유
-              </label>
-              <input placeholder="예: 성실한 출석, 규정 위반 등" value={reason}
-                onChange={e => setReason(e.target.value)}
-                style={{ ...inputStyle, marginBottom: '14px' }} />
+              {/* 사유 선택 (드롭다운) */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: '#64748B' }}>
+                  사유
+                </label>
+                <button onClick={() => setShowReasonManager(v => !v)} style={{
+                  display: 'flex', alignItems: 'center', gap: '4px',
+                  background: 'transparent', border: 'none', cursor: 'pointer',
+                  fontSize: '11px', fontWeight: 600,
+                  color: showReasonManager ? '#6366F1' : '#94A3B8',
+                }}>
+                  <Settings size={12} /> 사유 관리
+                </button>
+              </div>
+              <select value={reason} onChange={e => setReason(e.target.value)}
+                style={{ ...inputStyle, marginBottom: showReasonManager ? '10px' : '14px' }}>
+                <option value="">사유를 선택해주세요</option>
+                {filteredReasons.map(r => (
+                  <option key={r.id} value={r.title}>{r.title}</option>
+                ))}
+              </select>
+
+              {/* 사유 관리 패널 (등록 / 삭제) */}
+              {showReasonManager && (() => {
+                const b = typeBadge(type)
+                return (
+                  <div style={{
+                    background: '#F8FAFC', border: '1px solid #E2E8F0',
+                    borderRadius: '10px', padding: '12px', marginBottom: '14px',
+                  }}>
+                    <p style={{ fontSize: '11px', color: '#94A3B8', marginBottom: '8px' }}>
+                      {type} 사유 목록 · 클릭하면 삭제돼요
+                    </p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+                      {filteredReasons.length === 0 ? (
+                        <span style={{ fontSize: '12px', color: '#CBD5E1' }}>등록된 사유가 없어요</span>
+                      ) : (
+                        filteredReasons.map(r => (
+                          <span key={r.id} onClick={() => handleDeleteReason(r.id, r.title)} style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            padding: '4px 9px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
+                            cursor: 'pointer', background: b.bg, color: b.color, border: `1px solid ${b.border}`,
+                          }}>
+                            {r.title} <X size={11} />
+                          </span>
+                        ))
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <input
+                        placeholder={`새 ${type} 사유 입력`}
+                        value={newReasonText}
+                        onChange={e => setNewReasonText(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddReason() } }}
+                        style={{ ...inputStyle, padding: '8px 10px', fontSize: '12px' }}
+                      />
+                      <button onClick={handleAddReason} style={{
+                        padding: '8px 14px', borderRadius: '10px', border: 'none',
+                        background: '#6366F1', color: '#fff', fontSize: '12px', fontWeight: 700,
+                        cursor: 'pointer', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px',
+                      }}>
+                        <Plus size={12} /> 추가
+                      </button>
+                    </div>
+                  </div>
+                )
+              })()}
 
               {/* 날짜 입력 */}
               <label style={{ fontSize: '12px', fontWeight: 600, color: '#64748B', display: 'block', marginBottom: '6px' }}>
