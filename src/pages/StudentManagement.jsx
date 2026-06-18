@@ -8,7 +8,7 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 )
 
-const GRADES = ['중1','중2','중3','고1','고2','고3']
+const GRADES = ['중1','중2','중3','고1','고2','고3','성인']
 
 // ✅ 학생 상태 정의
 const STATUS_OPTIONS = ['재원생', '예비원생', '퇴원생']

@@ -167,6 +167,7 @@ export default function AttendanceManagement() {
       absence_reason:    att?.absence_reason    ?? '',
       is_late:           att?.is_late           ?? false,
       late_reason:       att?.late_reason       ?? '',
+      note:              att?.note              ?? '',
       [field]: value,
     }
     if (att?.id) payload.id = att.id
@@ -292,7 +293,7 @@ export default function AttendanceManagement() {
               }}>{opt}</button>
           ))}
 
-          <span style={{ fontSize:'12px', fontWeight:700, color:'#64748B', marginLeft:'8px' }}>결석현황:</span>
+          <span style={{ fontSize:'12px', fontWeight:700, color:'#64748B', marginLeft:'8px' }}>불참현황:</span>
           {['전체', '-','결석','하원','학원','식사'].map(opt => (
             <button key={opt} onClick={() => setFilterAbsence(opt)}
               style={{
@@ -337,10 +338,11 @@ export default function AttendanceManagement() {
                   <SortTh field="name"   label="이름" />
                   <SortTh field="seat"   label="좌석" center />
                   <SortTh field="attendance" label="등원 현황" />
-                  <th style={{ ...cell, background:'#F8FAFC', fontSize:'11px', fontWeight:700, color:'#64748B', letterSpacing:'0.04em', textAlign:'left' }}>결석 현황</th>
+                  <th style={{ ...cell, background:'#F8FAFC', fontSize:'11px', fontWeight:700, color:'#64748B', letterSpacing:'0.04em', textAlign:'left' }}>불참 현황</th>
                   <th style={{ ...cell, background:'#F8FAFC', fontSize:'11px', fontWeight:700, color:'#64748B', letterSpacing:'0.04em', textAlign:'left' }}>결석 사유</th>
                   <th style={{ ...cell, background:'#F8FAFC', fontSize:'11px', fontWeight:700, color:'#64748B', letterSpacing:'0.04em', textAlign:'left' }}>지각 여부</th>
                   <th style={{ ...cell, background:'#F8FAFC', fontSize:'11px', fontWeight:700, color:'#64748B', letterSpacing:'0.04em', textAlign:'left' }}>지각 사유</th>
+                  <th style={{ ...cell, background:'#F8FAFC', fontSize:'11px', fontWeight:700, color:'#64748B', letterSpacing:'0.04em', textAlign:'left' }}>비고</th>
                 </tr>
               </thead>
               <tbody>
@@ -467,6 +469,17 @@ export default function AttendanceManagement() {
                           placeholder="사유 입력"
                           style={{ padding:'5px 10px', borderRadius:'8px', fontSize:'12px', border:'1.5px solid #E2E8F0', outline:'none', width:'100px', background:'#F8FAFC', color:'#374151' }}
                           onFocus={e => { e.target.style.borderColor='#6366F1'; e.target.style.background='#fff' }} />
+                      </td>
+
+                      {/* ✅ 비고 (자유 메모) */}
+                      <td style={cell}>
+                        <input type="text" value={textVal(row, 'note')}
+                          onChange={e => handleTextChange(row.studentId, row.period, 'note', e.target.value)}
+                          onBlur={e  => handleTextBlur(row, 'note', e.target.value)}
+                          placeholder="메모 입력"
+                          style={{ padding:'5px 10px', borderRadius:'8px', fontSize:'12px', border:'1.5px solid #E2E8F0', outline:'none', width:'140px', background:'#F8FAFC', color:'#374151' }}
+                          onFocus={e => { e.target.style.borderColor='#6366F1'; e.target.style.background='#fff' }}
+                          onBlurCapture={e => { e.target.style.borderColor='#E2E8F0'; e.target.style.background='#F8FAFC' }} />
                       </td>
                     </tr>
                   )

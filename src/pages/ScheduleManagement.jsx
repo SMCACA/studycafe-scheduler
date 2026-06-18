@@ -10,13 +10,13 @@ const supabase = createClient(
 )
 
 const DAY_KEYS = [
-  { key: 'mon_slots', label: '월', cfgKey: 'mon', type: 'weekday' },
-  { key: 'tue_slots', label: '화', cfgKey: 'tue', type: 'weekday' },
-  { key: 'wed_slots', label: '수', cfgKey: 'wed', type: 'weekday' },
-  { key: 'thu_slots', label: '목', cfgKey: 'thu', type: 'weekday' },
-  { key: 'fri_slots', label: '금', cfgKey: 'fri', type: 'weekday' },
-  { key: 'sat_slots', label: '토', cfgKey: 'sat', type: 'weekend' },
-  { key: 'sun_slots', label: '일', cfgKey: 'sun', type: 'weekend' },
+  { key: 'mon_slots', label: '월', cfgKey: 'mon', type: 'weekday', color: '#6366F1', bg: '#EEF2FF', bgLight: '#F5F7FF' },
+  { key: 'tue_slots', label: '화', cfgKey: 'tue', type: 'weekday', color: '#8B5CF6', bg: '#F5F3FF', bgLight: '#FAF9FF' },
+  { key: 'wed_slots', label: '수', cfgKey: 'wed', type: 'weekday', color: '#0EA5E9', bg: '#EFF8FF', bgLight: '#F7FBFF' },
+  { key: 'thu_slots', label: '목', cfgKey: 'thu', type: 'weekday', color: '#14B8A6', bg: '#F0FDFA', bgLight: '#F7FEFC' },
+  { key: 'fri_slots', label: '금', cfgKey: 'fri', type: 'weekday', color: '#10B981', bg: '#ECFDF5', bgLight: '#F5FDF9' },
+  { key: 'sat_slots', label: '토', cfgKey: 'sat', type: 'weekend', color: '#F59E0B', bg: '#FFF7ED', bgLight: '#FFFAF3' },
+  { key: 'sun_slots', label: '일', cfgKey: 'sun', type: 'weekend', color: '#E11D48', bg: '#FFF1F2', bgLight: '#FFF7F8' },
 ]
 
 const DEFAULT_SLOT_CONFIG = { mon:5, tue:5, wed:5, thu:5, fri:5, sat:10, sun:10 }
@@ -502,10 +502,11 @@ export default function ScheduleManagement() {
                     ))}
                     {dayConfig.map(day => (
                       <th key={day.key} colSpan={day.slots} style={{
-                        border:cellBorder, padding:'8px 4px',
+                        border:cellBorder, borderRight:`3px solid ${day.color}`,
+                        padding:'8px 4px',
                         textAlign:'center', fontSize:'12px', fontWeight:700,
-                        background: day.type === 'weekend' ? '#FFF1F2' : '#EEF2FF',
-                        color:       day.type === 'weekend' ? '#E11D48'  : '#4F46E5',
+                        background: day.bg,
+                        color:      day.color,
                       }}>
                         {day.label}요일
                         <span style={{ marginLeft:'4px', fontSize:'10px', fontWeight:400, opacity:0.65 }}>
@@ -521,16 +522,21 @@ export default function ScheduleManagement() {
                   </tr>
                   <tr>
                     {dayConfig.map(day =>
-                      Array.from({ length: day.slots }, (_, i) => (
-                        <th key={`${day.key}-${i}`} style={{
-                          border:cellBorder, padding:'5px 2px',
-                          textAlign:'center', width:'28px',
-                          fontSize:'10px', fontWeight:500, color:'#94A3B8',
-                          background: day.type === 'weekend' ? '#FFF8F8' : '#F5F8FF',
-                        }}>
-                          {i + 1}
-                        </th>
-                      ))
+                      Array.from({ length: day.slots }, (_, i) => {
+                        const isLastOfDay = i === day.slots - 1
+                        return (
+                          <th key={`${day.key}-${i}`} style={{
+                            border:cellBorder,
+                            borderRight: isLastOfDay ? `3px solid ${day.color}` : cellBorder,
+                            padding:'5px 2px',
+                            textAlign:'center', width:'28px',
+                            fontSize:'10px', fontWeight:500, color:'#94A3B8',
+                            background: day.bgLight,
+                          }}>
+                            {i + 1}
+                          </th>
+                        )
+                      })
                     )}
                   </tr>
                 </thead>
@@ -647,7 +653,8 @@ export default function ScheduleManagement() {
                               if (!avail) {
                                 return (
                                   <td key={day.key} colSpan={day.slots} style={{
-                                    border:cellBorder, textAlign:'center',
+                                    border:cellBorder, borderRight:`3px solid ${day.color}`,
+                                    textAlign:'center',
                                     background:'#1E293B', height:'36px',
                                   }}>
                                     <span style={{ fontSize:'9px', color:'#475569', fontWeight:600, letterSpacing:'0.05em' }}>✕</span>
@@ -656,20 +663,21 @@ export default function ScheduleManagement() {
                               }
                               return Array.from({ length: day.slots }, (_, i) => {
                                 const n = i + 1
+                                const isLastOfDay = i === day.slots - 1
                                 const active = (schedule[day.key] || []).includes(n)
                                 return (
                                   <td key={`${day.key}-${n}`} style={{
-                                    border:cellBorder, textAlign:'center', width:'28px', height:'36px',
-                                    background: active
-                                      ? (day.type === 'weekend' ? '#FFF7ED' : '#EEF2FF')
-                                      : 'transparent',
+                                    border:cellBorder,
+                                    borderRight: isLastOfDay ? `3px solid ${day.color}` : cellBorder,
+                                    textAlign:'center', width:'28px', height:'36px',
+                                    background: active ? day.bg : 'transparent',
                                     verticalAlign:'middle',
                                   }}>
                                     {active && (
                                       <span style={{
                                         display:'inline-flex', alignItems:'center', justifyContent:'center',
                                         width:'18px', height:'18px', borderRadius:'50%',
-                                        background: day.type === 'weekend' ? '#F59E0B' : '#6366F1',
+                                        background: day.color,
                                         fontSize:'9px', fontWeight:900, color:'#fff',
                                       }}>●</span>
                                     )}
@@ -679,12 +687,17 @@ export default function ScheduleManagement() {
                             })
                           ) : (
                             dayConfig.flatMap(day =>
-                              Array.from({ length: day.slots }, (_, i) => (
-                                <td key={`${day.key}-e-${i}`} style={{
-                                  border:cellBorder, width:'28px', height:'36px',
-                                  background: day.type === 'weekend' ? '#FFFBFA' : '#FAFBFF',
-                                }} />
-                              ))
+                              Array.from({ length: day.slots }, (_, i) => {
+                                const isLastOfDay = i === day.slots - 1
+                                return (
+                                  <td key={`${day.key}-e-${i}`} style={{
+                                    border:cellBorder,
+                                    borderRight: isLastOfDay ? `3px solid ${day.color}` : cellBorder,
+                                    width:'28px', height:'36px',
+                                    background: day.bgLight,
+                                  }} />
+                                )
+                              })
                             )
                           )}
                           {/* 삭제 버튼 */}
@@ -958,13 +971,15 @@ export default function ScheduleManagement() {
                     return (
                       <div key={day.key} style={{
                         borderRadius:'12px', padding:'12px 14px',
-                        border:'1px solid #E2E8F0', background: avail ? '#fff' : '#F8FAFC',
+                        border:'1px solid #E2E8F0',
+                        borderLeft: avail ? `4px solid ${day.color}` : '4px solid #E2E8F0',
+                        background: avail ? day.bgLight : '#F8FAFC',
                         opacity: avail ? 1 : 0.45, transition:'opacity 0.15s',
                       }}>
                         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'10px' }}>
                           <span style={{
                             fontSize:'13px', fontWeight:700,
-                            color: !avail ? '#94A3B8' : day.type === 'weekend' ? '#E11D48' : '#0F172A',
+                            color: !avail ? '#94A3B8' : day.color,
                           }}>
                             {day.label}요일
                             <span style={{ fontSize:'11px', fontWeight:400, color:'#94A3B8', marginLeft:'6px' }}>({day.slots}교시)</span>
@@ -972,7 +987,7 @@ export default function ScheduleManagement() {
                           {avail && (
                             <button type="button"
                               onClick={() => toggleAllDay(day.key, day.slots)}
-                              style={{ fontSize:'11px', color:'#6366F1', background:'none', border:'none', cursor:'pointer', fontWeight:600 }}
+                              style={{ fontSize:'11px', color:day.color, background:'none', border:'none', cursor:'pointer', fontWeight:600 }}
                             >
                               {cur.length === day.slots ? '모두 해제' : '모두 선택'}
                             </button>
@@ -991,15 +1006,16 @@ export default function ScheduleManagement() {
                                   border: checked ? 'none' : '1.5px solid #E2E8F0',
                                   cursor: avail ? 'pointer' : 'not-allowed',
                                   fontSize:'13px', fontWeight:700, transition:'all 0.12s',
-                                  background: checked ? '#6366F1' : '#F8FAFC',
+                                  background: checked ? day.color : '#F8FAFC',
                                   color: checked ? '#fff' : '#94A3B8',
-                                  boxShadow: checked ? '0 3px 8px rgba(99,102,241,0.3)' : 'none',
+                                  boxShadow: checked ? `0 3px 8px ${day.color}4D` : 'none',
                                   transform: checked ? 'scale(1.05)' : 'scale(1)',
                                 }}
                               >
                                 {n}
                               </button>
                             )
+
                           })}
                         </div>
                       </div>
@@ -1206,7 +1222,7 @@ export default function ScheduleManagement() {
                   <div key={day.key} style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                     <span style={{
                       fontSize:'14px', fontWeight:700, width:'60px',
-                      color: day.type === 'weekend' ? '#E11D48' : '#0F172A',
+                      color: day.color,
                     }}>
                       {day.label}요일
                     </span>

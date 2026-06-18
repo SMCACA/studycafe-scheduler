@@ -44,10 +44,10 @@ const typeBadge = (type) =>
 /* ── 사유 드롭다운 템플릿 (브라우저에 저장되는 목록) ── */
 const REASON_STORAGE_KEY = 'smc_point_reasons'
 const DEFAULT_REASONS = [
-  { id: 'r1', type: '상점', title: '성실한 출석' },
-  { id: 'r2', type: '상점', title: '시험 성적 향상' },
-  { id: 'r3', type: '벌점', title: '무단 결석' },
-  { id: 'r4', type: '벌점', title: '규정 위반' },
+  { id: 'r1', type: '상점', title: '성실한 출석', points: 5 },
+  { id: 'r2', type: '상점', title: '시험 성적 향상', points: 10 },
+  { id: 'r3', type: '벌점', title: '무단 결석', points: 5 },
+  { id: 'r4', type: '벌점', title: '규정 위반', points: 5 },
 ]
 
 export default function StudentPoints() {
@@ -69,6 +69,7 @@ export default function StudentPoints() {
   const [reasonTemplates,    setReasonTemplates]    = useState([])
   const [showReasonManager,  setShowReasonManager]  = useState(false)
   const [newReasonText,      setNewReasonText]      = useState('')
+  const [newReasonPoints,    setNewReasonPoints]    = useState('')
 
   /* ── 월별 조회 상태 ── */
   const [selectedMonth,    setSelectedMonth]    = useState(() => {
@@ -125,7 +126,9 @@ export default function StudentPoints() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem(REASON_STORAGE_KEY)
-      setReasonTemplates(saved ? JSON.parse(saved) : DEFAULT_REASONS)
+      const list = saved ? JSON.parse(saved) : DEFAULT_REASONS
+      // ✅ 예전 버전(점수 없이 저장된 사유)도 깨지지 않도록 기본 1점을 채워줌
+      setReasonTemplates(list.map(r => ({ ...r, points: Number(r.points) > 0 ? Number(r.points) : 1 })))
     } catch {
       setReasonTemplates(DEFAULT_REASONS)
     }
@@ -143,18 +146,25 @@ export default function StudentPoints() {
     [reasonTemplates, type]
   )
 
-  /* ── 새 사유 추가 ── */
+  /* ── 새 사유 추가 (사유 + 점수를 함께 등록) ── */
   const handleAddReason = () => {
     const title = newReasonText.trim()
+    const pts   = Number(newReasonPoints)
     if (!title) return
+    if (!pts || pts <= 0) {
+      showToast('이 사유에 부여할 점수를 입력해주세요', 'error')
+      return
+    }
     if (filteredReasons.some(r => r.title === title)) {
       showToast('이미 등록된 사유예요', 'error')
       return
     }
-    const updated = [...reasonTemplates, { id: Date.now().toString(), type, title }]
+    const updated = [...reasonTemplates, { id: Date.now().toString(), type, title, points: pts }]
     saveReasonTemplates(updated)
     setReason(title)
+    setPoints(String(pts))   // ✅ 사유를 등록하는 즉시 연계된 점수도 자동 반영
     setNewReasonText('')
+    setNewReasonPoints('')
     showToast('새 사유를 등록했어요 ✏️')
   }
 
@@ -166,6 +176,13 @@ export default function StudentPoints() {
 
   const selectedStudent = students.find(s => s.id === selectedId)
   const canSave = selectedId && reason.trim() && Number(points) > 0
+
+  /* ── 사유 선택 시 매칭된 점수를 자동으로 부여 ── */
+  const handleReasonSelect = (title) => {
+    setReason(title)
+    const matched = filteredReasons.find(r => r.title === title)
+    if (matched) setPoints(String(matched.points))
+  }
 
   /* ── 등록 ── */
   const handleSave = async () => {
@@ -320,7 +337,7 @@ export default function StudentPoints() {
               </label>
               <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
                 {['상점', '벌점'].map(tp => (
-                  <button key={tp} onClick={() => { setType(tp); setReason('') }} style={{
+                  <button key={tp} onClick={() => { setType(tp); setReason(''); setPoints('') }} style={{
                     flex: 1, padding: '10px 0', borderRadius: '10px',
                     border: type === tp ? 'none' : '1.5px solid #E2E8F0',
                     background: type === tp
@@ -336,15 +353,7 @@ export default function StudentPoints() {
                 ))}
               </div>
 
-              {/* 점수 입력 */}
-              <label style={{ fontSize: '12px', fontWeight: 600, color: '#64748B', display: 'block', marginBottom: '6px' }}>
-                점수
-              </label>
-              <input type="number" min="1" placeholder="예: 5" value={points}
-                onChange={e => setPoints(e.target.value)}
-                style={{ ...inputStyle, marginBottom: '14px' }} />
-
-              {/* 사유 선택 (드롭다운) */}
+              {/* 사유 선택 (드롭다운) — 사유를 고르면 매칭된 점수가 자동으로 채워져요 */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <label style={{ fontSize: '12px', fontWeight: 600, color: '#64748B' }}>
                   사유
@@ -358,15 +367,22 @@ export default function StudentPoints() {
                   <Settings size={12} /> 사유 관리
                 </button>
               </div>
-              <select value={reason} onChange={e => setReason(e.target.value)}
-                style={{ ...inputStyle, marginBottom: showReasonManager ? '10px' : '14px' }}>
+              <select value={reason} onChange={e => handleReasonSelect(e.target.value)}
+                style={{ ...inputStyle, marginBottom: showReasonManager ? '10px' : '6px' }}>
                 <option value="">사유를 선택해주세요</option>
                 {filteredReasons.map(r => (
-                  <option key={r.id} value={r.title}>{r.title}</option>
+                  <option key={r.id} value={r.title}>
+                    {r.title} ({type === '상점' ? '+' : '-'}{r.points}점)
+                  </option>
                 ))}
               </select>
+              {!showReasonManager && (
+                <p style={{ fontSize: '11px', color: '#94A3B8', margin: '0 0 14px' }}>
+                  💡 사유를 고르면 점수가 자동으로 채워져요 (필요하면 아래에서 직접 고쳐도 돼요)
+                </p>
+              )}
 
-              {/* 사유 관리 패널 (등록 / 삭제) */}
+              {/* 사유 관리 패널 (등록 / 삭제) — 사유와 점수를 함께 등록해요 */}
               {showReasonManager && (() => {
                 const b = typeBadge(type)
                 return (
@@ -387,7 +403,7 @@ export default function StudentPoints() {
                             padding: '4px 9px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
                             cursor: 'pointer', background: b.bg, color: b.color, border: `1px solid ${b.border}`,
                           }}>
-                            {r.title} <X size={11} />
+                            {r.title} ({type === '상점' ? '+' : '-'}{r.points}) <X size={11} />
                           </span>
                         ))
                       )}
@@ -398,7 +414,14 @@ export default function StudentPoints() {
                         value={newReasonText}
                         onChange={e => setNewReasonText(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddReason() } }}
-                        style={{ ...inputStyle, padding: '8px 10px', fontSize: '12px' }}
+                        style={{ ...inputStyle, padding: '8px 10px', fontSize: '12px', flex: 2 }}
+                      />
+                      <input
+                        type="number" min="1" placeholder="점수"
+                        value={newReasonPoints}
+                        onChange={e => setNewReasonPoints(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddReason() } }}
+                        style={{ ...inputStyle, padding: '8px 10px', fontSize: '12px', flex: 1, width: 'auto' }}
                       />
                       <button onClick={handleAddReason} style={{
                         padding: '8px 14px', borderRadius: '10px', border: 'none',
@@ -408,9 +431,21 @@ export default function StudentPoints() {
                         <Plus size={12} /> 추가
                       </button>
                     </div>
+                    <p style={{ fontSize: '10px', color: '#CBD5E1', margin: '8px 0 0' }}>
+                      사유와 점수를 함께 입력하면, 다음부터 이 사유를 고를 때 점수가 자동으로 매칭돼요
+                    </p>
                   </div>
                 )
               })()}
+
+              {/* 점수 입력 (사유 선택 시 자동 채워짐 · 직접 수정 가능) */}
+              <label style={{ fontSize: '12px', fontWeight: 600, color: '#64748B', display: 'block', marginBottom: '6px' }}>
+                점수
+              </label>
+              <input type="number" min="1" placeholder="예: 5" value={points}
+                onChange={e => setPoints(e.target.value)}
+                style={{ ...inputStyle, marginBottom: '14px' }} />
+
 
               {/* 날짜 입력 */}
               <label style={{ fontSize: '12px', fontWeight: 600, color: '#64748B', display: 'block', marginBottom: '6px' }}>
