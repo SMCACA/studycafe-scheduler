@@ -5,7 +5,8 @@ import {
   Star, AlertTriangle, Plus, Trash2, MessageSquare,
   ChevronDown, Copy, CheckCheck, Edit3, Save, X, Loader, // ✅ Loader 추가
 } from 'lucide-react'
-import { sendNotification } from '../lib/sendNotification' // ✅ 추가
+import { sendMeritNotification } from '../lib/sendMeritNotification' // ✅ 승인된 템플릿 변수 매핑
+import { getMonthlyPointTotals } from '../lib/pointsSummary'           // ✅ 이번 달 누적 상점/벌점 계산
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -166,9 +167,15 @@ export default function RewardNotification() {
       .catch(() => alert('복사 실패 – 브라우저 권한을 확인해주세요'))
   }
 
-  // ✅ 실제 알림톡 발송 함수
+  // ✅ 실제 알림톡 발송 함수 (승인된 카카오 템플릿에 변수를 채워서 보내요)
   const handleSend = async () => {
     if (!canSend) return
+
+    // 승인된 템플릿 문장에는 점수가 꼭 들어가요 (예: "벌점 5점이 부여되었습니다")
+    if (!score) {
+      alert('⚠️ 점수를 입력해주세요!\n\n승인된 알림톡 템플릿 문장에는 점수가 꼭 포함돼야 해요.')
+      return
+    }
 
     const targetPhone = recipient === 'parent'
       ? selectedStudent.parent_phone
@@ -180,7 +187,8 @@ export default function RewardNotification() {
       return
     }
 
-    const icon = selectedTemplate.type === '상점' ? '⭐' : '⚠️'
+    const isReward = selectedTemplate.type === '상점'
+    const icon = isReward ? '⭐' : '⚠️'
     const recipientLabel = recipient === 'parent'
       ? `${selectedStudent.parent_name || '학부모님'} (학부모)`
       : `${selectedStudent.name} (학생 본인)`
@@ -196,12 +204,35 @@ export default function RewardNotification() {
 
     setSending(true)
     try {
-      await sendNotification({
-        to:   targetPhone,
-        text: getPreviewText(),
-        type: 'reward',
-      })
-      alert(`✅ 발송 완료!\n\n${recipientLabel}께 ${selectedTemplate.type} 알림톡이 전송되었습니다.`)
+      // ✅ [수정] 예전엔 type이 'reward'로 고정돼 있어서 벌점도 상점 템플릿으로 잘못 발송됐어요.
+      //    선택한 문구의 type(상점/벌점)에 맞춰 정확히 갈라줘요.
+      const apiType = isReward ? 'reward' : 'penalty'
+
+      const payload = {
+        to: targetPhone,
+        studentName: selectedStudent.name,
+        reason: selectedTemplate.title, // 템플릿의 #{상점사유}/#{벌점사유}에 들어갈 값
+        points: Number(score),
+        // 미리보기에서 작성한 풍성한 문구는 "알림톡 실패 시" 대체 문자로만 사용돼요.
+        // (승인된 카카오 템플릿 본문 자체는 변수 외엔 고정 문구라 임의 텍스트를 못 넣어요)
+        fallbackText: getPreviewText(),
+      }
+
+      // ⚠️ 벌점 템플릿에만 "이번 달 누적 벌점/상점" 문구가 필요해요
+      if (!isReward) {
+        const now = new Date()
+        const { totalReward, totalPenalty } = await getMonthlyPointTotals(selectedStudent.id, now)
+        payload.month = now.getMonth() + 1
+        payload.totalPenalty = totalPenalty
+        payload.totalReward = totalReward
+      }
+
+      const result = await sendMeritNotification(apiType, payload)
+      if (!result.success) {
+        alert(`❌ 발송 실패\n\n${result.error || '알 수 없는 오류'}`)
+      } else {
+        alert(`✅ 발송 완료!\n\n${recipientLabel}께 ${selectedTemplate.type} 알림톡이 전송되었습니다.`)
+      }
     } catch (err) {
       alert(`❌ 발송 실패\n\n${err.message}`)
     } finally {
@@ -466,7 +497,7 @@ export default function RewardNotification() {
         </StepCard>
 
         {/* ── STEP 3: 점수 입력 ── */}
-        <StepCard step="3" title="점수 입력 (선택)" style={{ marginBottom: '16px' }}>
+        <StepCard step="3" title="점수 입력 (알림톡 발송 시 필수)" style={{ marginBottom: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{ position: 'relative', width: '160px' }}>
               <input
@@ -483,7 +514,7 @@ export default function RewardNotification() {
                 fontSize: '13px', color: '#94A3B8', pointerEvents: 'none',
               }}>점</span>
             </div>
-            <p style={{ fontSize: '13px', color: '#94A3B8' }}>비워두면 점수 없이 내용만 전달돼요</p>
+            <p style={{ fontSize: '13px', color: '#94A3B8' }}>승인된 알림톡 문장에 점수가 들어가요. 복사용 문자만 쓸 거면 비워둬도 돼요</p>
           </div>
         </StepCard>
 

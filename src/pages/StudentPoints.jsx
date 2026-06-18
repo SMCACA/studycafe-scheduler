@@ -5,6 +5,8 @@ import {
   Star, AlertTriangle, Plus, Trash2, Award,
   ChevronLeft, ChevronRight, Calendar, Loader, Settings, X,
 } from 'lucide-react'
+import { sendMeritNotification } from '../lib/sendMeritNotification' // ✅ 상벌점 알림톡 발송
+import { getMonthlyPointTotals } from '../lib/pointsSummary'           // ✅ 이번 달 누적 상점/벌점 계산
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -198,9 +200,52 @@ export default function StudentPoints() {
     setSaving(false)
     if (error) { showToast('등록 실패: ' + error.message, 'error'); return }
     showToast(`${selectedStudent?.name} 학생 ${type} 등록 완료! ${type === '상점' ? '⭐' : '⚠️'}`)
+
+    // ✅ 등록과 동시에 학부모님께 알림톡 발송 (실패해도 점수 등록 자체는 이미 완료된 상태예요)
+    sendPointNotification(selectedStudent, type, reason.trim(), Number(points), recordDate)
+
     setPoints(''); setReason('')
     fetchRecent()
     if (activeTab === 'monthly') fetchMonthRecords(selectedMonth)
+  }
+
+  /* ── 상점/벌점 등록 시 승인된 카카오 템플릿으로 알림톡 보내기 ── */
+  /* 비유: 우체국 양식(템플릿)에 이름·사유·점수를 받아 적어서 부치는 역할이에요 */
+  const sendPointNotification = async (student, krType, reasonText, pointsValue, dateStr) => {
+    if (!student) return
+
+    // 학부모 번호를 우선으로, 없으면 학생 본인 번호로 발송
+    const phone = student.parent_phone || student.student_phone
+    if (!phone) {
+      showToast('⚠️ 학부모/학생 연락처가 없어 알림톡을 보내지 못했어요', 'error')
+      return
+    }
+
+    try {
+      const apiType = krType === '상점' ? 'reward' : 'penalty' // 한글 → 템플릿 종류 변환
+      const payload = {
+        to: phone,
+        studentName: student.name,
+        reason: reasonText,
+        points: pointsValue,
+      }
+
+      // ⚠️ 벌점 템플릿에만 "이번 달 누적 벌점/상점" 문구가 들어가요 (상점 템플릿엔 불필요)
+      if (apiType === 'penalty') {
+        const monthDate = new Date(dateStr)
+        const { totalReward, totalPenalty } = await getMonthlyPointTotals(student.id, monthDate)
+        payload.month = monthDate.getMonth() + 1
+        payload.totalPenalty = totalPenalty
+        payload.totalReward = totalReward
+      }
+
+      const result = await sendMeritNotification(apiType, payload)
+      if (!result.success) {
+        showToast('⚠️ 알림톡 발송 실패: ' + (result.error || '알 수 없는 오류'), 'error')
+      }
+    } catch (err) {
+      showToast('⚠️ 알림톡 발송 중 오류: ' + err.message, 'error')
+    }
   }
 
   /* ── 삭제 (등록 실수 정정용) ── */
