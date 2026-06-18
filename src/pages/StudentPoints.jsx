@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { sendMeritNotification } from '../lib/sendMeritNotification' // ✅ 상벌점 알림톡 발송
 import { getMonthlyPointTotals } from '../lib/pointsSummary'           // ✅ 이번 달 누적 상점/벌점 계산
+import { addPoint } from '../lib/addPoint'                             // ✅ RLS 우회해서 점수 저장 (서버 경유)
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -190,15 +191,25 @@ export default function StudentPoints() {
   const handleSave = async () => {
     if (!canSave) return
     setSaving(true)
-    const { error } = await supabase.from('student_points').insert({
-      student_id:  selectedId,
-      type,
-      points:      Number(points),
-      reason:      reason.trim(),
-      record_date: recordDate,
-    })
+
+    // ⚠️ 브라우저에서 곧바로 supabase.insert()를 부르면 보안 정책(RLS) 때문에
+    //    "new row violates row-level security policy" 오류가 나요.
+    //    그래서 서버(api/add-point.js)를 거쳐서 저장해요.
+    try {
+      await addPoint({
+        studentId:  selectedId,
+        type,
+        points:     Number(points),
+        reason:     reason.trim(),
+        recordDate: recordDate,
+      })
+    } catch (err) {
+      setSaving(false)
+      showToast('등록 실패: ' + err.message, 'error')
+      return
+    }
+
     setSaving(false)
-    if (error) { showToast('등록 실패: ' + error.message, 'error'); return }
     showToast(`${selectedStudent?.name} 학생 ${type} 등록 완료! ${type === '상점' ? '⭐' : '⚠️'}`)
 
     // ✅ 등록과 동시에 학부모님께 알림톡 발송 (실패해도 점수 등록 자체는 이미 완료된 상태예요)

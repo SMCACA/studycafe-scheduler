@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { sendMeritNotification } from '../lib/sendMeritNotification' // ✅ 승인된 템플릿 변수 매핑
 import { getMonthlyPointTotals } from '../lib/pointsSummary'           // ✅ 이번 달 누적 상점/벌점 계산
+import { addPoint } from '../lib/addPoint'                             // ✅ RLS 우회해서 점수 저장 (서버 경유)
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -250,15 +251,18 @@ export default function RewardNotification() {
     setSending(true)
     try {
       // 1) 점수 테이블에도 기록 (점수 등록 탭에서 등록한 것과 동일하게 저장돼요)
-      const { error: insertError } = await supabase.from('student_points').insert({
-        student_id:  selectedId,
-        type,
-        points:      Number(score),
-        reason:      reason.trim(),
-        record_date: todayStr(),
-      })
-      if (insertError) {
-        alert('❌ 점수 기록 실패\n\n' + insertError.message)
+      //    ⚠️ 브라우저에서 곧바로 insert하면 보안 정책(RLS) 때문에 막혀서,
+      //       서버(api/add-point.js)를 거쳐서 저장해요.
+      try {
+        await addPoint({
+          studentId:  selectedId,
+          type,
+          points:     Number(score),
+          reason:     reason.trim(),
+          recordDate: todayStr(),
+        })
+      } catch (err) {
+        alert('❌ 점수 기록 실패\n\n' + err.message)
         return
       }
 
