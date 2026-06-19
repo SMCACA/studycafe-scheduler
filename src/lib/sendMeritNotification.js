@@ -10,6 +10,15 @@
 //    누적 벌점/상점(totalPenalty, totalReward)은 직접 계산하지 않고
 //    호출하는 쪽에서 넘겨받아요. 같은 폴더의 pointsSummary.js의
 //    getMonthlyPointTotals() 함수로 쉽게 구할 수 있어요.
+//
+// ⚠️ [2026-06-20 수정] 변수 키를 "#{}"로 감싸도록 변경!
+//    - 비유: 카카오 템플릿의 빈칸 이름표는 "#{학생이름}"처럼
+//      '#' 기호 + 중괄호가 붙어있는 모양이에요.
+//      그런데 예전 코드는 그냥 '학생이름'이라고만 적어서 보냈어요.
+//      카카오 쪽에서는 "#{}" 모양이 아니면 그 빈칸을 못 찾고
+//      "치환되지 않은 변수가 있습니다(에러 1057)"라며 거부했어요.
+//    - api/send-notification.js는 이 변수를 가공 없이 그대로
+//      솔라피로 전달하기 때문에, 여기서 키 모양을 맞춰줘야 해요.
 // ================================================================
 
 /**
@@ -42,22 +51,22 @@ export async function sendMeritNotification(type, payload) {
 
   const isReward = type === 'reward'
 
-  // ⚠️ 아래 key 이름(학생이름, 벌점사유 등)은
-  //    솔라피에 등록한 템플릿의 변수명과 "정확히 똑같이" 적어야 합니다!
-  //    (오타 하나만 있어도 발송이 거부돼요)
+  // ⚠️ 아래 key 이름은 솔라피에 등록한 템플릿의 변수명과
+  //    "#{} 모양까지 정확히 똑같이" 적어야 합니다!
+  //    (예: #{학생이름} ← '#'와 중괄호까지 한 글자도 다르면 발송이 거부돼요)
   const variables = isReward
     ? {
-        '학생이름': studentName,
-        '상점사유': reason,
-        '상점점수': `${points}점`,
+        '#{학생이름}': studentName,
+        '#{상점사유}': reason,
+        '#{상점점수}': `${points}점`,
       }
     : {
-        '학생이름': studentName,
-        '벌점사유': reason,
-        '벌점점수': `${points}점`,
-        '기준월':   String(month),
-        '누적벌점': String(totalPenalty),
-        '누적상점': String(totalReward),
+        '#{학생이름}': studentName,
+        '#{벌점사유}': reason,
+        '#{벌점점수}': `${points}점`,
+        '#{기준월}':   String(month),
+        '#{누적벌점}': String(totalPenalty),
+        '#{누적상점}': String(totalReward),
       }
 
   // 알림톡 발송이 실패했을 때 대신 보내는 일반 문자(SMS) 내용
