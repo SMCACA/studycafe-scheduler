@@ -341,7 +341,7 @@ export default function AttendanceManagement() {
                   <th style={{ ...cell, background:'#F8FAFC', fontSize:'11px', fontWeight:700, color:'#64748B', letterSpacing:'0.04em', textAlign:'left' }}>불참 현황</th>
                   <th style={{ ...cell, background:'#F8FAFC', fontSize:'11px', fontWeight:700, color:'#64748B', letterSpacing:'0.04em', textAlign:'left' }}>결석 사유</th>
                   <th style={{ ...cell, background:'#F8FAFC', fontSize:'11px', fontWeight:700, color:'#64748B', letterSpacing:'0.04em', textAlign:'left' }}>지각 여부</th>
-                  <th style={{ ...cell, background:'#F8FAFC', fontSize:'11px', fontWeight:700, color:'#64748B', letterSpacing:'0.04em', textAlign:'left' }}>지각 사유</th>
+                  <th style={{ ...cell, background:'#F8FAFC', fontSize:'11px', fontWeight:700, color:'#64748B', letterSpacing:'0.04em', textAlign:'left' }}>지각 사유/ 등원예정교시</th>
                   <th style={{ ...cell, background:'#F8FAFC', fontSize:'11px', fontWeight:700, color:'#64748B', letterSpacing:'0.04em', textAlign:'left' }}>비고</th>
                 </tr>
               </thead>
