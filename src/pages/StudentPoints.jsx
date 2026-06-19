@@ -6,8 +6,9 @@ import {
   ChevronLeft, ChevronRight, Calendar, Loader, Settings, X,
 } from 'lucide-react'
 import { addPoint } from '../lib/addPoint'                             // ✅ RLS 우회해서 점수 저장 (서버 경유)
+import { fetchRecentPoints, fetchMonthPoints, deletePoint } from '../lib/pointsApi' // ✅ RLS 우회해서 조회·삭제 (서버 경유)
 // ℹ️ 알림톡(카카오 메시지) 발송은 "상벌점 알림톡" 메뉴에서 따로 처리해요.
-//    이 페이지(상벌점 관리)는 점수 데이터를 저장하는 역할만 담당합니다.
+//    이 페이지(상벌점 관리)는 점수 데이터를 저장·조회·삭제하는 역할만 담당합니다.
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -97,12 +98,12 @@ export default function StudentPoints() {
   /* ── 최근 등록 내역 ── */
   const fetchRecent = useCallback(async () => {
     setRecentLoading(true)
-    const { data } = await supabase
-      .from('student_points')
-      .select('*, students(name, seat_number)')
-      .order('created_at', { ascending: false })
-      .limit(8)
-    if (data) setRecent(data)
+    try {
+      const data = await fetchRecentPoints(8)
+      setRecent(data)
+    } catch (err) {
+      showToast('최근 내역 불러오기 실패: ' + err.message, 'error')
+    }
     setRecentLoading(false)
   }, [])
 
@@ -110,13 +111,12 @@ export default function StudentPoints() {
   const fetchMonthRecords = useCallback(async (monthDate) => {
     setMonthLoading(true)
     const { first, last } = monthRange(monthDate)
-    const { data, error } = await supabase
-      .from('student_points')
-      .select('*, students(name, seat_number)')
-      .gte('record_date', first)
-      .lte('record_date', last)
-      .order('record_date', { ascending: false })
-    if (!error && data) setMonthRecords(data)
+    try {
+      const data = await fetchMonthPoints(first, last)
+      setMonthRecords(data)
+    } catch (err) {
+      showToast('월별 기록 불러오기 실패: ' + err.message, 'error')
+    }
     setMonthLoading(false)
   }, [])
 
@@ -220,8 +220,12 @@ export default function StudentPoints() {
   /* ── 삭제 (등록 실수 정정용) ── */
   const handleDelete = async (id) => {
     if (!window.confirm('이 기록을 삭제할까요?')) return
-    const { error } = await supabase.from('student_points').delete().eq('id', id)
-    if (error) { showToast('삭제 실패: ' + error.message, 'error'); return }
+    try {
+      await deletePoint(id)
+    } catch (err) {
+      showToast('삭제 실패: ' + err.message, 'error')
+      return
+    }
     showToast('기록을 삭제했어요 🗑️')
     fetchRecent()
     fetchMonthRecords(selectedMonth)
