@@ -47,6 +47,10 @@ export async function getMonthlyPointTotals(studentId, monthDate) {
   let totalReward = 0
   let totalPenalty = 0
   rows.forEach((row) => {
+    // ⚠️ 이중 안전장치: 서버(api/get-points.js)가 studentId로 걸러서 주지만,
+    //    혹시라도 다른 학생 기록이 섞여 와도 여기서 한 번 더 막아줘요.
+    //    (비유: 문 앞에서 신분증 확인했어도, 입장할 때 한 번 더 확인하는 느낌)
+    if (row.student_id !== studentId) return
     if (row.type === '상점') totalReward += row.points
     else totalPenalty += row.points
   })

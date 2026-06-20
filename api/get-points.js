@@ -30,7 +30,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { mode, limit, start, end } = req.query || {}
+    const { mode, limit, start, end, studentId } = req.query || {}
 
     // 1️⃣ student_points 기록을 조인 없이 가져옴
     let pointsQuery = supabase.from('student_points').select('*')
@@ -43,6 +43,14 @@ export default async function handler(req, res) {
         .gte('record_date', start)
         .lte('record_date', end)
         .order('record_date', { ascending: false })
+
+      // ⚠️ 버그였던 부분: studentId가 와도 여기서 걸러주지 않으면
+      //    "이번 달 전체 학생"의 기록이 다 섞여서 누적 합계가 틀려져요.
+      //    (비유: 식당 매출표에서 "내 테이블"만 보고 싶은데, 필터를 안 걸어서
+      //     "모든 테이블 합계"가 나오던 상황이에요)
+      if (studentId) {
+        pointsQuery = pointsQuery.eq('student_id', studentId)
+      }
     } else {
       pointsQuery = pointsQuery
         .order('created_at', { ascending: false })
