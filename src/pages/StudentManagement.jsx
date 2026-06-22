@@ -12,10 +12,16 @@ const GRADES = ['중1','중2','중3','고1','고2','고3','성인']
 
 // ✅ 학생 상태 정의
 const STATUS_OPTIONS = ['재원생', '예비원생', '퇴원생']
+// ⚠️ [2026-06-23 수정] 퇴원생 색상 버그 수정
+//    예전 값은 bg:'#F8FAFC', color:'#94A3B8', border:'#E2E8F0' 였는데,
+//    이게 버튼이 "선택 안 됐을 때(비활성)" 기본 색깔과 똑같았어요.
+//    그래서 퇴원생을 클릭해서 선택해도 안 누른 것처럼 보였던 거예요.
+//    (비유: 도장 색깔을 종이 색깔과 똑같이 만들어서, 도장을 찍어도 안 보이는 상황)
+//    이제 다른 상태들처럼 또렷하게 구분되는 색(붉은 계열)으로 바꿨어요.
 const STATUS_STYLE = {
   재원생:  { bg:'#ECFDF5', color:'#059669', border:'#A7F3D0' },
   예비원생: { bg:'#EEF2FF', color:'#6366F1', border:'#C7D2FE' },
-  퇴원생:  { bg:'#F8FAFC', color:'#94A3B8', border:'#E2E8F0' },
+  퇴원생:  { bg:'#FEF2F2', color:'#DC2626', border:'#FCA5A5' },
 }
 
 const cell = { border:'1px solid #E2E8F0', padding:'11px 14px', verticalAlign:'middle' }

@@ -41,7 +41,8 @@ function getWeekRange() {
 const GRADE_ORDER = ['고3','고2','고1','중3','중2','중1']
 
 export default function Dashboard() {
-  const [students,      setStudents]      = useState([])
+  const [students,      setStudents]      = useState([])     // 재원생만 (학년 분포용)
+  const [statusCounts,  setStatusCounts]  = useState({ 재원생:0, 예비원생:0, 퇴원생:0 }) // ✅ 전체 상태별 인원
   const [todayCount,    setTodayCount]    = useState(0)     // 오늘 등원 예정 학생 수
   const [weekMsgCount,  setWeekMsgCount]  = useState(0)     // 이번 주 알림톡 수
   const [todayNames,    setTodayNames]    = useState([])    // 오늘 등원 학생 이름 목록
@@ -61,6 +62,19 @@ export default function Dashboard() {
 
       const stuList = stuData || []
       setStudents(stuList)
+
+      // ✅ ①-1. 전체 학생의 상태(재원생/예비원생/퇴원생)별 인원수 — 원형 그래프용
+      //    재원생/예비원생/퇴원생 모두 합친 "전체" 학생 수가 필요해서 status만 따로 조회해요.
+      //    (비유: 전체 학생 명단에서 이름표 색깔별로 몇 명인지 세는 작업)
+      const { data: statusData } = await supabase
+        .from('students')
+        .select('status')
+      const counts = { 재원생: 0, 예비원생: 0, 퇴원생: 0 }
+      ;(statusData || []).forEach(s => {
+        const st = s.status || '재원생'
+        if (counts[st] !== undefined) counts[st] += 1
+      })
+      setStatusCounts(counts)
 
       // ② 오늘 등원 예정 — schedules 에서 오늘 요일 슬롯 확인 (재원생만)
       const todaySlotKey = DAY_SLOT_KEYS[new Date().getDay()]
@@ -113,6 +127,19 @@ export default function Dashboard() {
   const highCount = students.filter(s => s.grade?.startsWith('고')).length
   const midCount  = students.filter(s => s.grade?.startsWith('중')).length
   const maxCount  = gradeDist.length > 0 ? Math.max(...gradeDist.map(g => g.count)) : 1
+
+  // ✅ 상태별 원형 그래프용 데이터 (재원생/예비원생/퇴원생 비율 + 명수)
+  //    StudentManagement.jsx의 STATUS_STYLE과 색을 맞춰서, 다른 화면과 똑같은 색으로 보이게 했어요.
+  const STATUS_PIE_COLORS = { 재원생: '#10B981', 예비원생: '#6366F1', 퇴원생: '#DC2626' }
+  const totalStudentCount = statusCounts.재원생 + statusCounts.예비원생 + statusCounts.퇴원생
+  const statusPieData = ['재원생', '예비원생', '퇴원생']
+    .map(st => ({
+      status: st,
+      count: statusCounts[st],
+      color: STATUS_PIE_COLORS[st],
+      pct: totalStudentCount > 0 ? (statusCounts[st] / totalStudentCount) * 100 : 0,
+    }))
+    .filter(d => d.count > 0)
 
   // ── 빠른 바로가기 설정 ─────────────────────────────────
   const quickLinks = [
@@ -283,6 +310,50 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* ── 학생 현황 원형 그래프 (재원생/예비원생/퇴원생 비율 + 명수) ── */}
+        <div style={{ marginTop:'16px' }}>
+          <SectionLabel>학생 현황</SectionLabel>
+          <div style={{
+            marginTop:'12px', padding:'20px',
+            background:'#fff', borderRadius:'14px',
+            border:'1px solid #E2E8F0', boxShadow:'0 1px 3px rgba(0,0,0,0.04)',
+            display:'flex', alignItems:'center', gap:'28px', flexWrap:'wrap',
+          }}>
+            {loading ? (
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'160px', width:'100%' }}>
+                <p style={{ color:'#94A3B8', fontSize:'13px' }}>불러오는 중…</p>
+              </div>
+            ) : totalStudentCount === 0 ? (
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'160px', width:'100%', gap:'10px' }}>
+                <Users size={28} style={{ color:'#E2E8F0' }} />
+                <p style={{ color:'#94A3B8', fontSize:'13px' }}>등록된 학생이 없어요</p>
+              </div>
+            ) : (
+              <>
+                <StatusDonutChart data={statusPieData} total={totalStudentCount} />
+                {/* 범례 (각 상태별 명수 + 비율) */}
+                <div style={{ display:'flex', flexDirection:'column', gap:'10px', minWidth:'160px' }}>
+                  {['재원생', '예비원생', '퇴원생'].map(st => {
+                    const count = statusCounts[st]
+                    const pct   = totalStudentCount > 0 ? Math.round((count / totalStudentCount) * 100) : 0
+                    return (
+                      <div key={st} style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                        <span style={{ width:'10px', height:'10px', borderRadius:'999px', background:STATUS_PIE_COLORS[st], flexShrink:0 }} />
+                        <span style={{ fontSize:'13px', fontWeight:600, color:'#374151', minWidth:'52px' }}>{st}</span>
+                        <span style={{ fontSize:'13px', fontWeight:700, color:'#0F172A' }}>{count}명</span>
+                        <span style={{ fontSize:'12px', color:'#94A3B8' }}>({pct}%)</span>
+                      </div>
+                    )
+                  })}
+                  <div style={{ marginTop:'4px', paddingTop:'10px', borderTop:'1px solid #F1F5F9', fontSize:'12px', color:'#64748B' }}>
+                    전체 <strong style={{ color:'#0F172A' }}>{totalStudentCount}명</strong>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
         {/* ── 오늘 등원 학생 목록 (todayCount > 0일 때) ── */}
         {!loading && todayCount > 0 && (
           <div style={{ marginTop:'16px' }}>
@@ -367,5 +438,52 @@ function StatCard({ icon:Icon, iconBg, iconColor, loading, value, label, sub }) 
 function SectionLabel({ children }) {
   return (
     <h3 style={{ fontSize:'14px', fontWeight:700, color:'#0F172A', margin:0 }}>{children}</h3>
+  )
+}
+
+// ── 학생 현황 도넛(원형) 차트 ──────────────────────────────
+// 비유: 피자 한 판(원 전체 = 100%)을 상태별 인원수만큼 조각내서 색칠하는 거예요.
+//      SVG의 strokeDasharray(점선 길이 조절 기능)를 이용해서
+//      "원의 둘레 중 몇 %만 색을 칠할지"를 계산해서 조각을 만들어요.
+function StatusDonutChart({ data, total }) {
+  const size   = 140
+  const stroke = 22
+  const radius = (size - stroke) / 2
+  const circumference = 2 * Math.PI * radius
+
+  let offsetAcc = 0 // 지금까지 칠한 비율(누적) — 다음 조각이 시작할 위치를 정해줘요
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink:0 }}>
+      {/* 배경 원 (아무것도 안 칠해진 부분) */}
+      <circle
+        cx={size/2} cy={size/2} r={radius}
+        fill="none" stroke="#F1F5F9" strokeWidth={stroke}
+      />
+      {data.map(({ status, color, pct }) => {
+        const dash      = (pct / 100) * circumference
+        const dashArray = `${dash} ${circumference - dash}`
+        const dashOffset = circumference - (offsetAcc / 100) * circumference
+        offsetAcc += pct
+        return (
+          <circle
+            key={status}
+            cx={size/2} cy={size/2} r={radius}
+            fill="none" stroke={color} strokeWidth={stroke}
+            strokeDasharray={dashArray}
+            strokeDashoffset={dashOffset}
+            transform={`rotate(-90 ${size/2} ${size/2})`} // 12시 방향에서 시작하도록 회전
+            strokeLinecap="butt"
+          />
+        )
+      })}
+      {/* 가운데 전체 인원수 텍스트 */}
+      <text x="50%" y="48%" textAnchor="middle" fontSize="22" fontWeight="800" fill="#0F172A">
+        {total}
+      </text>
+      <text x="50%" y="64%" textAnchor="middle" fontSize="11" fontWeight="600" fill="#94A3B8">
+        전체 학생
+      </text>
+    </svg>
   )
 }

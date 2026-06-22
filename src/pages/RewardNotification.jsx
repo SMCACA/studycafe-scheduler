@@ -87,7 +87,7 @@ export default function RewardNotification() {
   const [students,   setStudents]   = useState([])
   const [selectedId, setSelectedId] = useState('')
   const [loading,    setLoading]    = useState(false)
-  const [recipient,  setRecipient]  = useState('parent') // 'parent' | 'student'
+  const [recipient,  setRecipient]  = useState('parent') // 'parent' | 'student' | 'both'
 
   /* ── 구분 / 사유 / 점수 ── */
   const [type,   setType]   = useState('상점')
@@ -219,40 +219,56 @@ export default function RewardNotification() {
       .catch(() => alert('복사 실패 – 브라우저 권한을 확인해주세요'))
   }
 
-  // ✅ 실제 알림톡 발송 함수
-  // 점수 기록(student_points)도 함께 남겨요 → 그래야 다음 번 "이번 달 누적" 계산이 정확해요
+  // ✅ [2026-06-23 수정] "학부모 + 학생 둘 다" 보낼 수 있게 구조 변경
+  //
+  //    비유: 영수증(상벌점 기록)은 한 건의 사건에 대해 딱 1장만 끊고,
+  //          그 영수증 "사본"을 학부모/학생 두 사람에게 나눠주는 것과 같아요.
+  //
+  //    예전에는 "발송 버튼 1번 = 점수 기록 1번 + 발송 1번"이 한 묶음이라,
+  //    학부모께 보내고 학생에게도 보내려고 버튼을 두 번 누르면
+  //    점수(student_points)도 2번 기록되는 중복 문제가 있었어요.
+  //
+  //    이제는 ① 점수 기록은 무조건 "딱 1번만" 하고,
+  //          ② 그 점수를 가지고 선택된 수신자(학부모/학생/둘 다)에게
+  //             알림톡만 각각 따로 보내도록 분리했어요.
   const handleSend = async () => {
     if (!canSend) return
 
-    const targetPhone = recipient === 'parent'
-      ? selectedStudent.parent_phone
-      : selectedStudent.student_phone
+    // ── 수신자 목록 만들기 (recipient 값에 따라 1명 또는 2명) ──
+    const candidates = [
+      { value: 'parent',  label: `${selectedStudent.parent_name || '학부모님'} (학부모)`, phone: selectedStudent.parent_phone },
+      { value: 'student', label: `${selectedStudent.name} (학생 본인)`,                    phone: selectedStudent.student_phone },
+    ]
+    const targets = candidates.filter(c =>
+      recipient === 'both' ? true : c.value === recipient
+    )
+    const sendList   = targets.filter(t => t.phone)      // 번호가 있는 사람만 실제 발송
+    const missingList = targets.filter(t => !t.phone)     // 번호가 없어서 못 보내는 사람
 
-    if (!targetPhone) {
-      const who = recipient === 'parent' ? '학부모 전화번호' : '학생 전화번호'
-      alert(`❌ ${who}가 없습니다!\n\n학생 관리 페이지에서 번호를 먼저 등록해주세요.`)
+    if (sendList.length === 0) {
+      const who = missingList.map(m => m.label).join(', ')
+      alert(`❌ 전화번호가 없습니다! (${who})\n\n학생 관리 페이지에서 번호를 먼저 등록해주세요.`)
       return
     }
 
     const icon = type === '상점' ? '⭐' : '⚠️'
-    const recipientLabel = recipient === 'parent'
-      ? `${selectedStudent.parent_name || '학부모님'} (학부모)`
-      : `${selectedStudent.name} (학생 본인)`
-
-    const confirmed = window.confirm(
+    let confirmMsg =
       `📱 알림톡을 발송할까요?\n\n` +
-      `수신자: ${recipientLabel}\n` +
-      `연락처: ${targetPhone}\n` +
+      `수신자: ${sendList.map(t => `${t.label} (${t.phone})`).join('\n      ')}\n` +
       `학생: ${selectedStudent.name}\n` +
       `내용: ${icon} ${type} - ${reason.trim()} (${score}점)`
-    )
+    if (missingList.length > 0) {
+      confirmMsg += `\n\n⚠️ ${missingList.map(m => m.label).join(', ')}는 전화번호가 없어 발송에서 제외돼요.`
+    }
+    const confirmed = window.confirm(confirmMsg)
     if (!confirmed) return
 
     setSending(true)
     try {
-      // 1) 점수 테이블에도 기록 (점수 등록 탭에서 등록한 것과 동일하게 저장돼요)
+      // ① 점수 테이블에 "딱 1번만" 기록 (점수 등록 탭에서 등록한 것과 동일하게 저장돼요)
       //    ⚠️ 브라우저에서 곧바로 insert하면 보안 정책(RLS) 때문에 막혀서,
       //       서버(api/add-point.js)를 거쳐서 저장해요.
+      //    ── 수신자가 1명이든 2명이든 이 블록은 한 번만 실행돼요 ──
       try {
         await addPoint({
           studentId:  selectedId,
@@ -266,10 +282,9 @@ export default function RewardNotification() {
         return
       }
 
-      // 2) 방금 기록한 것까지 포함해서 다시 정확하게 누적 합계 계산
+      // ② 방금 기록한 것까지 포함해서 다시 정확하게 누적 합계 계산 (벌점일 때만, 공통으로 1번만 계산)
       const apiType = type === '상점' ? 'reward' : 'penalty'
-      const payload = {
-        to: targetPhone,
+      const basePayload = {
         studentName: selectedStudent.name,
         reason: reason.trim(),
         points: Number(score),
@@ -277,21 +292,42 @@ export default function RewardNotification() {
       }
       if (apiType === 'penalty') {
         const { totalReward, totalPenalty } = await getMonthlyPointTotals(selectedId, new Date())
-        payload.month = new Date().getMonth() + 1
-        payload.totalPenalty = totalPenalty
-        payload.totalReward = totalReward
+        basePayload.month = new Date().getMonth() + 1
+        basePayload.totalPenalty = totalPenalty
+        basePayload.totalReward = totalReward
       }
 
-      const result = await sendMeritNotification(apiType, payload)
-      if (!result.success) {
-        alert(`⚠️ 점수는 기록됐지만 알림톡 발송에 실패했어요\n\n${result.error || '알 수 없는 오류'}`)
+      // ③ 수신자 각각에게 알림톡 발송 (점수 기록과는 분리돼 있어서 여기서 몇 번을 보내도 점수는 중복되지 않아요)
+      const results = await Promise.all(
+        sendList.map(async (t) => {
+          try {
+            const result = await sendMeritNotification(apiType, { ...basePayload, to: t.phone })
+            return { ...t, success: !!result.success, error: result.error }
+          } catch (err) {
+            return { ...t, success: false, error: err.message }
+          }
+        })
+      )
+
+      const succeeded = results.filter(r => r.success)
+      const failed    = results.filter(r => !r.success)
+
+      if (failed.length === 0) {
+        alert(`✅ 발송 완료!\n\n${succeeded.map(r => r.label).join(', ')}께 ${type} 알림톡이 전송되었습니다.`)
+      } else if (succeeded.length === 0) {
+        alert(`⚠️ 점수는 기록됐지만 알림톡 발송에 모두 실패했어요\n\n${failed.map(r => `${r.label}: ${r.error || '알 수 없는 오류'}`).join('\n')}`)
       } else {
-        alert(`✅ 발송 완료!\n\n${recipientLabel}께 ${type} 알림톡이 전송되었습니다.`)
-        setReason('')
-        setScore('')
-        if (type === '벌점') {
-          getMonthlyPointTotals(selectedId, new Date()).then(setMonthlyTotals)
-        }
+        alert(
+          `⚠️ 일부만 발송됐어요 (점수는 정상 기록됨)\n\n` +
+          `성공: ${succeeded.map(r => r.label).join(', ')}\n` +
+          `실패: ${failed.map(r => `${r.label} (${r.error || '알 수 없는 오류'})`).join(', ')}`
+        )
+      }
+
+      setReason('')
+      setScore('')
+      if (type === '벌점') {
+        getMonthlyPointTotals(selectedId, new Date()).then(setMonthlyTotals)
       }
     } catch (err) {
       alert(`❌ 발송 실패\n\n${err.message}`)
@@ -371,6 +407,7 @@ export default function RewardNotification() {
                 {[
                   { value: 'parent',  label: '👨‍👩‍👧 학부모', phone: selectedStudent.parent_phone },
                   { value: 'student', label: '🧑‍🎓 학생 본인', phone: selectedStudent.student_phone },
+                  { value: 'both',    label: '👨‍👩‍👧🧑‍🎓 둘 다', phone: null },
                 ].map(({ value, label, phone }) => (
                   <button
                     key={value}
@@ -386,12 +423,20 @@ export default function RewardNotification() {
                     <span style={{ fontSize: '13px', fontWeight: 700, color: recipient === value ? '#4F46E5' : '#374151' }}>
                       {label}
                     </span>
-                    <span style={{ fontSize: '11px', color: phone ? '#64748B' : '#EF4444', marginTop: '2px' }}>
-                      {phone || '번호 없음'}
+                    <span style={{ fontSize: '11px', color: phone ? '#64748B' : (value === 'both' ? '#94A3B8' : '#EF4444'), marginTop: '2px' }}>
+                      {value === 'both'
+                        ? `학부모+학생 각각 발송`
+                        : (phone || '번호 없음')}
                     </span>
                   </button>
                 ))}
               </div>
+              {/* ✅ '둘 다' 선택 시, 점수는 1번만 기록되고 알림톡만 두 사람에게 따로 발송된다는 점을 안내 */}
+              {recipient === 'both' && (
+                <p style={{ marginTop: '8px', fontSize: '11px', color: '#6366F1' }}>
+                  💡 상벌점은 1건만 기록되고, 학부모/학생 두 분께 알림톡만 각각 발송돼요 (중복 등록 걱정 없어요)
+                </p>
+              )}
             </div>
           )}
         </StepCard>
