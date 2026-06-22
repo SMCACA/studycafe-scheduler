@@ -42,7 +42,7 @@ const GRADE_ORDER = ['고3','고2','고1','중3','중2','중1']
 
 export default function Dashboard() {
   const [students,      setStudents]      = useState([])     // 재원생만 (학년 분포용)
-  const [statusCounts,  setStatusCounts]  = useState({ 재원생:0, 예비원생:0, 퇴원생:0 }) // ✅ 전체 상태별 인원
+  const [academyCounts, setAcademyCounts] = useState({ smc: 0, nonSmc: 0 }) // ✅ SMC 재원생/비재원생 인원
   const [todayCount,    setTodayCount]    = useState(0)     // 오늘 등원 예정 학생 수
   const [weekMsgCount,  setWeekMsgCount]  = useState(0)     // 이번 주 알림톡 수
   const [todayNames,    setTodayNames]    = useState([])    // 오늘 등원 학생 이름 목록
@@ -56,25 +56,18 @@ export default function Dashboard() {
       // ① 재원생만 + 학년 분포
       const { data: stuData } = await supabase
         .from('students')
-        .select('id, name, grade, seat_number, school, status')
+        .select('id, name, grade, seat_number, school, status, is_academy_student')
         .eq('status', '재원생')
         .order('name')
 
       const stuList = stuData || []
       setStudents(stuList)
 
-      // ✅ ①-1. 전체 학생의 상태(재원생/예비원생/퇴원생)별 인원수 — 원형 그래프용
-      //    재원생/예비원생/퇴원생 모두 합친 "전체" 학생 수가 필요해서 status만 따로 조회해요.
-      //    (비유: 전체 학생 명단에서 이름표 색깔별로 몇 명인지 세는 작업)
-      const { data: statusData } = await supabase
-        .from('students')
-        .select('status')
-      const counts = { 재원생: 0, 예비원생: 0, 퇴원생: 0 }
-      ;(statusData || []).forEach(s => {
-        const st = s.status || '재원생'
-        if (counts[st] !== undefined) counts[st] += 1
-      })
-      setStatusCounts(counts)
+      // ✅ ①-1. "스터디카페 재원생" 중에서 SMC 학원도 같이 다니는지(SMC 재원생) 비율 — 원형 그래프용
+      //    비유: 재원 상태는 "이 카페에 다니는지"이고, 이건 "SMC 학원 수업도 같이 듣는지"라
+      //         완전히 다른 구분이에요. 그래서 재원생 명단 안에서 다시 한번 나눠 세요.
+      const smcCount = stuList.filter(s => s.is_academy_student).length
+      setAcademyCounts({ smc: smcCount, nonSmc: stuList.length - smcCount })
 
       // ② 오늘 등원 예정 — schedules 에서 오늘 요일 슬롯 확인 (재원생만)
       const todaySlotKey = DAY_SLOT_KEYS[new Date().getDay()]
@@ -128,17 +121,15 @@ export default function Dashboard() {
   const midCount  = students.filter(s => s.grade?.startsWith('중')).length
   const maxCount  = gradeDist.length > 0 ? Math.max(...gradeDist.map(g => g.count)) : 1
 
-  // ✅ 상태별 원형 그래프용 데이터 (재원생/예비원생/퇴원생 비율 + 명수)
-  //    StudentManagement.jsx의 STATUS_STYLE과 색을 맞춰서, 다른 화면과 똑같은 색으로 보이게 했어요.
-  const STATUS_PIE_COLORS = { 재원생: '#10B981', 예비원생: '#6366F1', 퇴원생: '#DC2626' }
-  const totalStudentCount = statusCounts.재원생 + statusCounts.예비원생 + statusCounts.퇴원생
-  const statusPieData = ['재원생', '예비원생', '퇴원생']
-    .map(st => ({
-      status: st,
-      count: statusCounts[st],
-      color: STATUS_PIE_COLORS[st],
-      pct: totalStudentCount > 0 ? (statusCounts[st] / totalStudentCount) * 100 : 0,
-    }))
+  // ✅ [교체] SMC 재원생/비재원생 원형 그래프용 데이터
+  //    StudentManagement.jsx의 ACADEMY_STYLE과 색을 맞춰서, 다른 화면과 똑같은 색으로 보이게 했어요.
+  const ACADEMY_PIE_COLORS = { 'SMC 재원생': '#D97706', '비재원생': '#64748B' }
+  const totalAcademyCount = academyCounts.smc + academyCounts.nonSmc
+  const academyPieData = [
+    { label: 'SMC 재원생', count: academyCounts.smc,    color: ACADEMY_PIE_COLORS['SMC 재원생'] },
+    { label: '비재원생',    count: academyCounts.nonSmc, color: ACADEMY_PIE_COLORS['비재원생'] },
+  ]
+    .map(d => ({ ...d, pct: totalAcademyCount > 0 ? (d.count / totalAcademyCount) * 100 : 0 }))
     .filter(d => d.count > 0)
 
   // ── 빠른 바로가기 설정 ─────────────────────────────────
@@ -310,9 +301,9 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ── 학생 현황 원형 그래프 (재원생/예비원생/퇴원생 비율 + 명수) ── */}
+        {/* ── SMC 재원생 현황 원형 그래프 (재원생 중 SMC 재원생/비재원생 비율 + 명수) ── */}
         <div style={{ marginTop:'16px' }}>
-          <SectionLabel>학생 현황</SectionLabel>
+          <SectionLabel>SMC 재원생 현황</SectionLabel>
           <div style={{
             marginTop:'12px', padding:'20px',
             background:'#fff', borderRadius:'14px',
@@ -323,30 +314,32 @@ export default function Dashboard() {
               <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'160px', width:'100%' }}>
                 <p style={{ color:'#94A3B8', fontSize:'13px' }}>불러오는 중…</p>
               </div>
-            ) : totalStudentCount === 0 ? (
+            ) : totalAcademyCount === 0 ? (
               <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'160px', width:'100%', gap:'10px' }}>
                 <Users size={28} style={{ color:'#E2E8F0' }} />
                 <p style={{ color:'#94A3B8', fontSize:'13px' }}>등록된 학생이 없어요</p>
               </div>
             ) : (
               <>
-                <StatusDonutChart data={statusPieData} total={totalStudentCount} />
-                {/* 범례 (각 상태별 명수 + 비율) */}
+                <StatusDonutChart data={academyPieData} total={totalAcademyCount} />
+                {/* 범례 (SMC 재원생 / 비재원생 명수 + 비율) */}
                 <div style={{ display:'flex', flexDirection:'column', gap:'10px', minWidth:'160px' }}>
-                  {['재원생', '예비원생', '퇴원생'].map(st => {
-                    const count = statusCounts[st]
-                    const pct   = totalStudentCount > 0 ? Math.round((count / totalStudentCount) * 100) : 0
+                  {[
+                    { label: 'SMC 재원생', count: academyCounts.smc },
+                    { label: '비재원생',    count: academyCounts.nonSmc },
+                  ].map(({ label, count }) => {
+                    const pct = totalAcademyCount > 0 ? Math.round((count / totalAcademyCount) * 100) : 0
                     return (
-                      <div key={st} style={{ display:'flex', alignItems:'center', gap:'8px' }}>
-                        <span style={{ width:'10px', height:'10px', borderRadius:'999px', background:STATUS_PIE_COLORS[st], flexShrink:0 }} />
-                        <span style={{ fontSize:'13px', fontWeight:600, color:'#374151', minWidth:'52px' }}>{st}</span>
+                      <div key={label} style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                        <span style={{ width:'10px', height:'10px', borderRadius:'999px', background:ACADEMY_PIE_COLORS[label], flexShrink:0 }} />
+                        <span style={{ fontSize:'13px', fontWeight:600, color:'#374151', minWidth:'70px' }}>{label}</span>
                         <span style={{ fontSize:'13px', fontWeight:700, color:'#0F172A' }}>{count}명</span>
                         <span style={{ fontSize:'12px', color:'#94A3B8' }}>({pct}%)</span>
                       </div>
                     )
                   })}
                   <div style={{ marginTop:'4px', paddingTop:'10px', borderTop:'1px solid #F1F5F9', fontSize:'12px', color:'#64748B' }}>
-                    전체 <strong style={{ color:'#0F172A' }}>{totalStudentCount}명</strong>
+                    재원생 중 <strong style={{ color:'#0F172A' }}>{totalAcademyCount}명</strong> 기준
                   </div>
                 </div>
               </>
@@ -460,14 +453,14 @@ function StatusDonutChart({ data, total }) {
         cx={size/2} cy={size/2} r={radius}
         fill="none" stroke="#F1F5F9" strokeWidth={stroke}
       />
-      {data.map(({ status, color, pct }) => {
+      {data.map(({ label, color, pct }) => {
         const dash      = (pct / 100) * circumference
         const dashArray = `${dash} ${circumference - dash}`
         const dashOffset = circumference - (offsetAcc / 100) * circumference
         offsetAcc += pct
         return (
           <circle
-            key={status}
+            key={label}
             cx={size/2} cy={size/2} r={radius}
             fill="none" stroke={color} strokeWidth={stroke}
             strokeDasharray={dashArray}
@@ -482,7 +475,7 @@ function StatusDonutChart({ data, total }) {
         {total}
       </text>
       <text x="50%" y="64%" textAnchor="middle" fontSize="11" fontWeight="600" fill="#94A3B8">
-        전체 학생
+        재원생
       </text>
     </svg>
   )

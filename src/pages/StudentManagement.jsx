@@ -24,6 +24,18 @@ const STATUS_STYLE = {
   퇴원생:  { bg:'#FEF2F2', color:'#DC2626', border:'#FCA5A5' },
 }
 
+// ✅ [신규] SMC 재원생(학원 수강 여부) 구분 — 스터디카페 재원 상태(STATUS_OPTIONS)와는 별개예요
+//    true  = SMC 재원생 (학원 수업도 같이 듣는 학생)
+//    false = 비재원생   (스터디카페만 이용하는 학생)
+const ACADEMY_OPTIONS = [
+  { value: true,  label: 'SMC 재원생' },
+  { value: false, label: '비재원생' },
+]
+const ACADEMY_STYLE = {
+  true:  { bg:'#FFFBEB', color:'#D97706', border:'#FDE68A' },
+  false: { bg:'#F1F5F9', color:'#64748B', border:'#E2E8F0' },
+}
+
 const cell = { border:'1px solid #E2E8F0', padding:'11px 14px', verticalAlign:'middle' }
 
 export default function StudentManagement() {
@@ -247,7 +259,7 @@ export default function StudentManagement() {
                     }
                   </span>
                 </th>
-                {['상태','학년','학교','학부모','학부모 전화','학생 전화','첫등원일','특이사항','메모','관리'].map(h => (
+                {['상태','SMC','학년','학교','학부모','학부모 전화','학생 전화','첫등원일','특이사항','메모','관리'].map(h => (
                   <th key={h} style={{
                     ...cell, background:'#F8FAFC',
                     fontSize:'11px', fontWeight:700, color:'#64748B',
@@ -259,7 +271,7 @@ export default function StudentManagement() {
             <tbody>
               {sorted.length === 0 ? (
                 <tr>
-                  <td colSpan={12} style={{ ...cell, textAlign:'center', padding:'64px 0' }}>
+                  <td colSpan={13} style={{ ...cell, textAlign:'center', padding:'64px 0' }}>
                     <Users size={32} style={{ color:'#E2E8F0', display:'block', margin:'0 auto 10px' }} />
                     <p style={{ color:'#94A3B8', fontSize:'14px' }}>
                       {search ? '검색 결과가 없어요' : `${statusFilter} 학생이 없어요`}
@@ -293,6 +305,19 @@ export default function StudentManagement() {
                           background: sStyle.bg, color: sStyle.color, border: `1px solid ${sStyle.border}`,
                           whiteSpace:'nowrap',
                         }}>{status}</span>
+                      </td>
+                      {/* ✅ [신규] SMC 재원생 배지 (재원 상태와는 별개) */}
+                      <td style={cell}>
+                        {(() => {
+                          const aSty = ACADEMY_STYLE[!!s.is_academy_student]
+                          return (
+                            <span style={{
+                              padding:'2px 10px', borderRadius:'999px', fontSize:'11px', fontWeight:700,
+                              background: aSty.bg, color: aSty.color, border: `1px solid ${aSty.border}`,
+                              whiteSpace:'nowrap',
+                            }}>{s.is_academy_student ? 'SMC 재원생' : '비재원생'}</span>
+                          )
+                        })()}
                       </td>
                       {/* 학년 */}
                       <td style={cell}>
@@ -384,6 +409,7 @@ function StudentModal({ student, onSave, onClose, loading }) {
     parent_phone:  student?.parent_phone  || '',
     student_phone: student?.student_phone || '',
     status:        student?.status        || '재원생',  // ✅ 추가
+    is_academy_student: student?.is_academy_student ?? false, // ✅ SMC 재원생(학원 수강생) 여부 — 스터디카페 상태와는 별개
     special_notes: student?.special_notes || '',        // ✅ 추가
     memo:          student?.memo          || '',
     first_attendance_date: student?.first_attendance_date || '',  // ✅ 첫등원일자
@@ -453,7 +479,7 @@ function StudentModal({ student, onSave, onClose, loading }) {
             </Field>
           </div>
 
-          {/* ✅ 재원 상태 */}
+          {/* ✅ 재원 상태 (스터디카페 등록 상태 — 재원생/예비원생/퇴원생) */}
           <Field label="재원 상태">
             <div style={{ display:'flex', gap:'8px' }}>
               {STATUS_OPTIONS.map(st => {
@@ -469,6 +495,31 @@ function StudentModal({ student, onSave, onClose, loading }) {
                       color: isActive ? sty.color : '#94A3B8',
                     }}>
                     {st}
+                  </button>
+                )
+              })}
+            </div>
+          </Field>
+
+          {/* ✅ [신규] SMC 재원생 구분 — "스터디카페 재원 상태"와는 완전히 별개의 구분이에요.
+                비유: 재원 상태는 "이 카페에 다니는지"이고, 이 항목은 "SMC 학원(수업)도 같이 다니는지"예요.
+                두 학생이 똘다 재원생이어도, 한 명은 SMC 학원도 다니고(SMC 재원생),
+                한 명은 스터디카페만 이용(비재원생)할 수 있어요. */}
+          <Field label="SMC 재원생 구분 (학원 수강 여부 — 재원 상태와는 별개예요)">
+            <div style={{ display:'flex', gap:'8px' }}>
+              {ACADEMY_OPTIONS.map(opt => {
+                const sty = ACADEMY_STYLE[opt.value]
+                const isActive = form.is_academy_student === opt.value
+                return (
+                  <button key={String(opt.value)} type="button" onClick={() => set('is_academy_student', opt.value)}
+                    style={{
+                      flex:1, padding:'8px', borderRadius:'10px', fontSize:'13px', fontWeight:600,
+                      cursor:'pointer', transition:'all 0.15s',
+                      border: isActive ? `2px solid ${sty.border}` : '2px solid #E2E8F0',
+                      background: isActive ? sty.bg : '#F8FAFC',
+                      color: isActive ? sty.color : '#94A3B8',
+                    }}>
+                    {opt.label}
                   </button>
                 )
               })}
