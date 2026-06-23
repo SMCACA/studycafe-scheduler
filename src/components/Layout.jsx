@@ -1,10 +1,12 @@
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import logoSrc from '../assets/smc_logo.png'
+import { getTodayQuote } from '../lib/encouragementQuotes' // ✅ 오늘의 응원문구
 import {
   LayoutDashboard, Users, CalendarDays, MessageSquare,
   LogOut, ChevronDown, ChevronRight, ClipboardList, Eye, BookOpen, Star,
   UserCheck, Award,  // ✅ 직원 아이콘 + 상벌점 아이콘
+  Sparkles,          // ✅ 응원문구 아이콘
 } from 'lucide-react'
 
 const SIDEBAR_W = 400
@@ -95,11 +97,22 @@ export default function Layout({ children }) {
           </div>
         </div>
 
-        <div style={{ flex:1, padding:'0 24px', display:'flex', alignItems:'center', gap:'6px' }}>
-          <span style={{ color:'#334155', fontSize:'12px' }}>SMC</span>
-          <span style={{ color:'#1E293B', fontSize:'12px' }}>›</span>
-          <span style={{ color:'#94A3B8', fontSize:'13px', fontWeight:500 }}>
+        <div style={{ flex:1, padding:'0 24px', display:'flex', alignItems:'center', gap:'6px', overflow:'hidden' }}>
+          <span style={{ color:'#334155', fontSize:'12px', flexShrink:0 }}>SMC</span>
+          <span style={{ color:'#1E293B', fontSize:'12px', flexShrink:0 }}>›</span>
+          <span style={{ color:'#94A3B8', fontSize:'13px', fontWeight:500, flexShrink:0 }}>
             {getPageTitle(location.pathname)}
+          </span>
+
+          {/* ✅ 오늘의 응원문구 — 날짜가 바뀌면 자동으로 다른 문구로 바뀌어요 */}
+          <span style={{ color:'#1E293B', fontSize:'12px', flexShrink:0, marginLeft:'4px' }}>·</span>
+          <span style={{
+            display:'flex', alignItems:'center', gap:'6px',
+            fontSize:'13px', fontWeight:500, color:'#A5B4FC',
+            overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+          }}>
+            <Sparkles size={13} style={{ color:'#818CF8', flexShrink:0 }} />
+            {getTodayQuote()}
           </span>
         </div>
 

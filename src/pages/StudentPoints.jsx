@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { addPoint } from '../lib/addPoint'                             // ✅ RLS 우회해서 점수 저장 (서버 경유)
 import { fetchRecentPoints, fetchMonthPoints, deletePoint } from '../lib/pointsApi' // ✅ RLS 우회해서 조회·삭제 (서버 경유)
+import { fetchReasons, addReason, deleteReason } from '../lib/pointReasonsApi'       // ✅ 사유 목록도 서버(공용 저장소)에서 가져옴
 // ℹ️ 알림톡(카카오 메시지) 발송은 "상벌점 알림톡" 메뉴에서 따로 처리해요.
 //    이 페이지(상벌점 관리)는 점수 데이터를 저장·조회·삭제하는 역할만 담당합니다.
 
@@ -45,14 +46,9 @@ const typeBadge = (type) =>
     ? { bg: '#FFFBEB', color: '#D97706', border: '#FDE68A' }
     : { bg: '#FFF1F2', color: '#E11D48', border: '#FECDD3' }
 
-/* ── 사유 드롭다운 템플릿 (브라우저에 저장되는 목록) ── */
-const REASON_STORAGE_KEY = 'smc_point_reasons'
-const DEFAULT_REASONS = [
-  { id: 'r1', type: '상점', title: '성실한 출석', points: 5 },
-  { id: 'r2', type: '상점', title: '시험 성적 향상', points: 10 },
-  { id: 'r3', type: '벌점', title: '무단 결석', points: 5 },
-  { id: 'r4', type: '벌점', title: '규정 위반', points: 5 },
-]
+/* ── 사유 드롭다운 템플릿은 이제 Supabase(공용 저장소)에 저장돼요.
+      예전에는 브라우저별 localStorage에 저장돼서 사람마다 다르게 보였는데,
+      이제는 모두가 같은 목록을 보게 돼요. ── */
 
 export default function StudentPoints() {
   const [students,  setStudents]  = useState([])
@@ -71,6 +67,7 @@ export default function StudentPoints() {
 
   /* ── 사유 드롭다운 관리 상태 ── */
   const [reasonTemplates,    setReasonTemplates]    = useState([])
+  const [reasonsLoading,     setReasonsLoading]      = useState(true)   // ✅ 사유 목록 불러오는 중 표시
   const [showReasonManager,  setShowReasonManager]  = useState(false)
   const [newReasonText,      setNewReasonText]      = useState('')
   const [newReasonPoints,    setNewReasonPoints]    = useState('')
@@ -125,23 +122,19 @@ export default function StudentPoints() {
     if (activeTab === 'monthly') fetchMonthRecords(selectedMonth)
   }, [activeTab, selectedMonth, fetchMonthRecords])
 
-  /* ── 사유 템플릿 불러오기 (최초 1회) ── */
-  useEffect(() => {
+  /* ── 사유 템플릿 불러오기 (최초 1회, 서버 공용 저장소에서) ── */
+  const loadReasonTemplates = useCallback(async () => {
+    setReasonsLoading(true)
     try {
-      const saved = localStorage.getItem(REASON_STORAGE_KEY)
-      const list = saved ? JSON.parse(saved) : DEFAULT_REASONS
-      // ✅ 예전 버전(점수 없이 저장된 사유)도 깨지지 않도록 기본 1점을 채워줌
-      setReasonTemplates(list.map(r => ({ ...r, points: Number(r.points) > 0 ? Number(r.points) : 1 })))
-    } catch {
-      setReasonTemplates(DEFAULT_REASONS)
+      const list = await fetchReasons()
+      setReasonTemplates(list)
+    } catch (err) {
+      showToast('사유 목록 불러오기 실패: ' + err.message, 'error')
     }
+    setReasonsLoading(false)
   }, [])
 
-  /* ── 사유 템플릿 저장 헬퍼 ── */
-  const saveReasonTemplates = (list) => {
-    localStorage.setItem(REASON_STORAGE_KEY, JSON.stringify(list))
-    setReasonTemplates(list)
-  }
+  useEffect(() => { loadReasonTemplates() }, [loadReasonTemplates])
 
   /* ── 현재 선택된 구분(상점/벌점)에 해당하는 사유 목록 ── */
   const filteredReasons = useMemo(
@@ -149,8 +142,8 @@ export default function StudentPoints() {
     [reasonTemplates, type]
   )
 
-  /* ── 새 사유 추가 (사유 + 점수를 함께 등록) ── */
-  const handleAddReason = () => {
+  /* ── 새 사유 추가 (사유 + 점수를 함께 등록, 서버 공용 저장소에 저장) ── */
+  const handleAddReason = async () => {
     const title = newReasonText.trim()
     const pts   = Number(newReasonPoints)
     if (!title) return
@@ -162,8 +155,13 @@ export default function StudentPoints() {
       showToast('이미 등록된 사유예요', 'error')
       return
     }
-    const updated = [...reasonTemplates, { id: Date.now().toString(), type, title, points: pts }]
-    saveReasonTemplates(updated)
+    try {
+      await addReason({ type, title, points: pts })
+    } catch (err) {
+      showToast('사유 등록 실패: ' + err.message, 'error')
+      return
+    }
+    await loadReasonTemplates()  // ✅ 등록 후 전체 목록을 다시 불러와서 모두 같은 목록을 보게 함
     setReason(title)
     setPoints(String(pts))   // ✅ 사유를 등록하는 즉시 연계된 점수도 자동 반영
     setNewReasonText('')
@@ -171,9 +169,15 @@ export default function StudentPoints() {
     showToast('새 사유를 등록했어요 ✏️')
   }
 
-  /* ── 사유 삭제 ── */
-  const handleDeleteReason = (id, title) => {
-    saveReasonTemplates(reasonTemplates.filter(r => r.id !== id))
+  /* ── 사유 삭제 (서버 공용 저장소에서) ── */
+  const handleDeleteReason = async (id, title) => {
+    try {
+      await deleteReason(id)
+    } catch (err) {
+      showToast('사유 삭제 실패: ' + err.message, 'error')
+      return
+    }
+    await loadReasonTemplates()
     if (reason === title) setReason('')
   }
 
@@ -413,7 +417,9 @@ export default function StudentPoints() {
                     </p>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
                       {filteredReasons.length === 0 ? (
-                        <span style={{ fontSize: '12px', color: '#CBD5E1' }}>등록된 사유가 없어요</span>
+                        <span style={{ fontSize: '12px', color: '#CBD5E1' }}>
+                          {reasonsLoading ? '불러오는 중...' : '등록된 사유가 없어요'}
+                        </span>
                       ) : (
                         filteredReasons.map(r => (
                           <span key={r.id} onClick={() => handleDeleteReason(r.id, r.title)} style={{

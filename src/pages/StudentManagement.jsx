@@ -259,7 +259,7 @@ export default function StudentManagement() {
                     }
                   </span>
                 </th>
-                {['상태','SMC','학년','학교','학부모','학부모 전화','학생 전화','첫등원일','특이사항','메모','관리'].map(h => (
+                {['상태','SMC','학년','학교','학부모','학부모 전화','학생 전화','첫등원일','질문방','특이사항','메모','관리'].map(h => (
                   <th key={h} style={{
                     ...cell, background:'#F8FAFC',
                     fontSize:'11px', fontWeight:700, color:'#64748B',
@@ -271,7 +271,7 @@ export default function StudentManagement() {
             <tbody>
               {sorted.length === 0 ? (
                 <tr>
-                  <td colSpan={13} style={{ ...cell, textAlign:'center', padding:'64px 0' }}>
+                  <td colSpan={14} style={{ ...cell, textAlign:'center', padding:'64px 0' }}>
                     <Users size={32} style={{ color:'#E2E8F0', display:'block', margin:'0 auto 10px' }} />
                     <p style={{ color:'#94A3B8', fontSize:'14px' }}>
                       {search ? '검색 결과가 없어요' : `${statusFilter} 학생이 없어요`}
@@ -346,6 +346,17 @@ export default function StudentManagement() {
                           : <span style={{ color:'#CBD5E1' }}>–</span>
                         }
                       </td>
+                      {/* ✅ [신규] 질문방 참여 여부 */}
+                      <td style={{ ...cell, textAlign:'center' }}>
+                        {s.is_question_room_member
+                          ? <span style={{
+                              display:'inline-flex', alignItems:'center', gap:'4px',
+                              padding:'2px 8px', borderRadius:'999px', fontSize:'11px', fontWeight:700,
+                              background:'#ECFDF5', color:'#059669', border:'1px solid #A7F3D0',
+                            }}>✅ 참여</span>
+                          : <span style={{ color:'#CBD5E1' }}>–</span>
+                        }
+                      </td>
                       {/* ✅ 특이사항 */}
                       <td style={{ ...cell, textAlign:'center' }}>
                         {s.special_notes
@@ -405,11 +416,11 @@ function StudentModal({ student, onSave, onClose, loading }) {
     grade:         student?.grade         || '',
     school:        student?.school        || '',
     seat_number:   student?.seat_number   || '',
-    parent_name:   student?.parent_name   || '',
     parent_phone:  student?.parent_phone  || '',
     student_phone: student?.student_phone || '',
     status:        student?.status        || '재원생',  // ✅ 추가
     is_academy_student: student?.is_academy_student ?? false, // ✅ SMC 재원생(학원 수강생) 여부 — 스터디카페 상태와는 별개
+    is_question_room_member: student?.is_question_room_member ?? false, // ✅ [신규] 질문방 참여 여부 (체크만, 들어갔는지/안갔는지만 확인)
     special_notes: student?.special_notes || '',        // ✅ 추가
     memo:          student?.memo          || '',
     first_attendance_date: student?.first_attendance_date || '',  // ✅ 첫등원일자
@@ -526,6 +537,27 @@ function StudentModal({ student, onSave, onClose, loading }) {
             </div>
           </Field>
 
+          {/* ✅ [신규] 질문방 참여 여부 — 단순히 "참여했는지 / 안 했는지"만 체크해서 확인하는 항목이에요 */}
+          <Field label="질문방 참여">
+            <label style={{
+              display:'flex', alignItems:'center', gap:'10px', cursor:'pointer',
+              padding:'10px 12px', borderRadius:'10px',
+              border: form.is_question_room_member ? '1.5px solid #A7F3D0' : '1.5px solid #E2E8F0',
+              background: form.is_question_room_member ? '#ECFDF5' : '#F8FAFC',
+              transition:'all 0.15s', width:'fit-content',
+            }}>
+              <input
+                type="checkbox"
+                checked={form.is_question_room_member}
+                onChange={e => set('is_question_room_member', e.target.checked)}
+                style={{ width:'16px', height:'16px', cursor:'pointer', accentColor:'#059669' }}
+              />
+              <span style={{ fontSize:'13px', fontWeight:600, color: form.is_question_room_member ? '#059669' : '#64748B' }}>
+                질문방에 참여했어요
+              </span>
+            </label>
+          </Field>
+
           {/* 학교 + 좌석 */}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px' }}>
             <Field label="학교">
@@ -542,21 +574,13 @@ function StudentModal({ student, onSave, onClose, loading }) {
             </Field>
           </div>
 
-          {/* 학부모 정보 */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px' }}>
-            <Field label="학부모 이름">
-              <input type="text" value={form.parent_name} onChange={e=>set('parent_name',e.target.value)} placeholder="홍부모"
-                style={inputStyle(false)}
-                onFocus={e=>Object.assign(e.target.style,focusStyle)}
-                onBlur={e=>Object.assign(e.target.style,blurStyle(false))} />
-            </Field>
-            <Field label="학부모 전화">
-              <input type="tel" value={form.parent_phone} onChange={e=>set('parent_phone',e.target.value)} placeholder="010-0000-0000"
-                style={inputStyle(false)}
-                onFocus={e=>Object.assign(e.target.style,focusStyle)}
-                onBlur={e=>Object.assign(e.target.style,blurStyle(false))} />
-            </Field>
-          </div>
+          {/* 학부모 전화 (학부모 이름은 등록 항목에서 제외했어요) */}
+          <Field label="학부모 전화">
+            <input type="tel" value={form.parent_phone} onChange={e=>set('parent_phone',e.target.value)} placeholder="010-0000-0000"
+              style={inputStyle(false)}
+              onFocus={e=>Object.assign(e.target.style,focusStyle)}
+              onBlur={e=>Object.assign(e.target.style,blurStyle(false))} />
+          </Field>
 
           <Field label="학생 전화">
             <input type="tel" value={form.student_phone} onChange={e=>set('student_phone',e.target.value)} placeholder="010-0000-0000"
