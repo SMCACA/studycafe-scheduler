@@ -259,7 +259,7 @@ export default function StudentManagement() {
                     }
                   </span>
                 </th>
-                {['상태','SMC','학년','학교','학부모','학부모 전화','학생 전화','첫등원일','질문방','특이사항','메모','관리'].map(h => (
+                {['상태','SMC','학년','학교','학부모 전화','학생 전화','첫등원일','질문방','특이사항','메모','관리'].map(h => (
                   <th key={h} style={{
                     ...cell, background:'#F8FAFC',
                     fontSize:'11px', fontWeight:700, color:'#64748B',
@@ -271,7 +271,7 @@ export default function StudentManagement() {
             <tbody>
               {sorted.length === 0 ? (
                 <tr>
-                  <td colSpan={14} style={{ ...cell, textAlign:'center', padding:'64px 0' }}>
+                  <td colSpan={13} style={{ ...cell, textAlign:'center', padding:'64px 0' }}>
                     <Users size={32} style={{ color:'#E2E8F0', display:'block', margin:'0 auto 10px' }} />
                     <p style={{ color:'#94A3B8', fontSize:'14px' }}>
                       {search ? '검색 결과가 없어요' : `${statusFilter} 학생이 없어요`}
@@ -331,8 +331,6 @@ export default function StudentManagement() {
                       </td>
                       {/* 학교 */}
                       <td style={{ ...cell, color:'#64748B' }}>{s.school || '–'}</td>
-                      {/* 학부모 */}
-                      <td style={{ ...cell, color:'#64748B' }}>{s.parent_name || '–'}</td>
                       {/* 학부모 전화 */}
                       <td style={{ ...cell, color:'#64748B', fontFamily:'monospace', fontSize:'12px' }}>{s.parent_phone || '–'}</td>
                       {/* 학생 전화 */}
