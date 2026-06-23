@@ -22,3 +22,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# 환경변수 (절대 올리면 안 됨 - API 키, 비밀번호 등)
+.env

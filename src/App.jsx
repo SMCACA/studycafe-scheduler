@@ -9,6 +9,7 @@ import RewardNotification from './pages/RewardNotification'
 import StudentPoints from './pages/StudentPoints'   // ✅ 신규: 상벌점 관리
 import StaffManagement from './pages/StaffManagement'   // ✅ 신규
 import PublicScheduleView from './pages/PublicScheduleView' // ✅ 공개 시간표 뷰
+import Apply from './pages/Apply' // ✅ [신규] 신청서 공개 페이지
 import ProtectedRoute from './components/ProtectedRoute'
 
 export default function App() {
@@ -53,6 +54,9 @@ export default function App() {
 
         {/* ✅ 공개 시간표 뷰 - 로그인 없이 접근 가능 */}
         <Route path="/view" element={<PublicScheduleView />} />
+
+        {/* ✅ [신규] 신청서 공개 페이지 - 로그인 없이 접근 가능 */}
+        <Route path="/apply" element={<Apply />} />
 
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
       </Routes>
