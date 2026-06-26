@@ -7,6 +7,8 @@ import {
   LogOut, ChevronDown, ChevronRight, ClipboardList, Eye, BookOpen, Star,
   UserCheck, Award,  // ✅ 직원 아이콘 + 상벌점 아이콘
   Sparkles,          // ✅ 응원문구 아이콘
+  BarChart3,         // ✅ [신규] 알림톡 발송 결과 아이콘
+  Archive,           // ✅ [신규] 매뉴얼 저장함 아이콘
 } from 'lucide-react'
 
 const SIDEBAR_W = 400
@@ -28,9 +30,11 @@ const menuItems = [
     children: [
       { label: '스케줄 알림톡', path: '/notifications/schedule', icon: Eye  },
       { label: '상벌점 알림톡', path: '/notifications/rewards',  icon: Star },
+      { label: '발송 결과 확인', path: '/notifications/logs',    icon: BarChart3 }, // ✅ 신규
     ],
   },
   { label: '직원 근무표', path: '/staff', icon: UserCheck }, // ✅ 신규
+  { label: '매뉴얼 저장함', path: '/manuals', icon: Archive }, // ✅ [신규]
 ]
 
 function getPageTitle(p) {
@@ -42,7 +46,9 @@ function getPageTitle(p) {
     '/schedules/attendance':   '등원 기록',
     '/notifications/schedule': '스케줄 알림톡',
     '/notifications/rewards':  '상벌점 알림톡',
+    '/notifications/logs':     '발송 결과 확인',
     '/staff':                  '직원 근무표',
+    '/manuals':                '매뉴얼 저장함',
   }
   return map[p] || 'SMC 스터디카페'
 }

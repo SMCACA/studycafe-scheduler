@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
-import { Users, Search, Plus, Edit2, Trash2, X, CheckCircle, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { Users, Search, Plus, Edit2, Trash2, X, CheckCircle, AlertTriangle, ChevronUp, ChevronDown, Armchair, Settings2, Check } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
 import Layout from '../components/Layout'
+import { fetchSeatConfig, updateSeatConfig } from '../lib/seatConfig'
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -51,7 +52,60 @@ export default function StudentManagement() {
   const [sortField,      setSortField]      = useState('name')
   const [sortDir,        setSortDir]        = useState('asc')
 
-  useEffect(() => { fetchStudents() }, [])
+  // ✅ [신규] 좌석번호 사용 범위 (예: 1~30)
+  const [seatConfig,     setSeatConfig]     = useState({ min_seat: 1, max_seat: 30 })
+  const [editingRange,   setEditingRange]   = useState(false)
+  const [rangeForm,      setRangeForm]      = useState({ min: '1', max: '30' })
+  const [savingRange,    setSavingRange]    = useState(false)
+
+  useEffect(() => { fetchStudents(); loadSeatConfig() }, [])
+
+  const loadSeatConfig = async () => {
+    const cfg = await fetchSeatConfig()
+    setSeatConfig(cfg)
+    setRangeForm({ min: String(cfg.min_seat), max: String(cfg.max_seat) })
+  }
+
+  const handleSaveRange = async () => {
+    const min = Number(rangeForm.min)
+    const max = Number(rangeForm.max)
+    if (!min || !max || min < 1 || max < min) {
+      showToast('좌석 범위를 올바르게 입력해주세요 (예: 1 ~ 30)', 'error')
+      return
+    }
+    setSavingRange(true)
+    try {
+      const updated = await updateSeatConfig({ minSeat: min, maxSeat: max })
+      setSeatConfig(updated)
+      setEditingRange(false)
+      showToast(`좌석 사용 범위가 ${min}번 ~ ${max}번으로 설정됐어요 🪑`)
+    } catch (err) {
+      showToast('좌석 범위 저장 실패: ' + err.message, 'error')
+    }
+    setSavingRange(false)
+  }
+
+  // ✅ [신규] 현재 배정된 좌석번호 집합 (재원생 + 예비원생 모두 포함, 퇴원생은 제외)
+  //    퇴원생은 좌석을 더 이상 쓰지 않으니 그 번호는 "미배정"으로 다시 보여줘요.
+  const occupiedSeats = useMemo(() => {
+    const set = new Set()
+    students.forEach(s => {
+      const st = s.status || '재원생'
+      if ((st === '재원생' || st === '예비원생') && s.seat_number != null) {
+        set.add(Number(s.seat_number))
+      }
+    })
+    return set
+  }, [students])
+
+  // ✅ [신규] 설정된 범위 안에서 아직 아무도 배정되지 않은 좌석번호 목록
+  const unassignedSeats = useMemo(() => {
+    const list = []
+    for (let n = seatConfig.min_seat; n <= seatConfig.max_seat; n++) {
+      if (!occupiedSeats.has(n)) list.push(n)
+    }
+    return list
+  }, [seatConfig, occupiedSeats])
 
   const fetchStudents = async () => {
     const { data, error } = await supabase.from('students').select('*').order('name')
@@ -164,6 +218,67 @@ export default function StudentManagement() {
           >
             <Plus size={16} /> 학생 등록
           </button>
+        </div>
+
+        {/* ✅ [신규] 좌석 설정 + 미배정 좌석 표시 패널 */}
+        <div style={{
+          background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0',
+          padding: '18px 22px', marginBottom: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Armchair size={16} style={{ color: '#6366F1' }} />
+              <span style={{ fontSize: '13px', fontWeight: 700, color: '#374151' }}>좌석 사용 범위</span>
+              {!editingRange && (
+                <span style={{ fontSize: '13px', color: '#6366F1', fontWeight: 700 }}>
+                  {seatConfig.min_seat}번 ~ {seatConfig.max_seat}번
+                </span>
+              )}
+            </div>
+
+            {editingRange ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <input type="number" min="1" value={rangeForm.min}
+                  onChange={e => setRangeForm(f => ({ ...f, min: e.target.value }))}
+                  style={{ width: '64px', padding: '6px 8px', borderRadius: '8px', border: '1.5px solid #C7D2FE', fontSize: '12px', textAlign: 'center' }} />
+                <span style={{ color: '#94A3B8', fontSize: '12px' }}>~</span>
+                <input type="number" min="1" value={rangeForm.max}
+                  onChange={e => setRangeForm(f => ({ ...f, max: e.target.value }))}
+                  style={{ width: '64px', padding: '6px 8px', borderRadius: '8px', border: '1.5px solid #C7D2FE', fontSize: '12px', textAlign: 'center' }} />
+                <button onClick={handleSaveRange} disabled={savingRange} style={{
+                  display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', borderRadius: '8px',
+                  border: 'none', background: '#6366F1', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+                }}><Check size={12} /> {savingRange ? '저장 중...' : '저장'}</button>
+                <button onClick={() => { setEditingRange(false); setRangeForm({ min: String(seatConfig.min_seat), max: String(seatConfig.max_seat) }) }} style={{
+                  padding: '6px 10px', borderRadius: '8px', border: '1.5px solid #E2E8F0', background: '#fff',
+                  color: '#94A3B8', fontSize: '12px', cursor: 'pointer',
+                }}>취소</button>
+              </div>
+            ) : (
+              <button onClick={() => setEditingRange(true)} style={{
+                display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', borderRadius: '8px',
+                border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#64748B', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+              }}><Settings2 size={12} /> 범위 수정</button>
+            )}
+          </div>
+
+          <p style={{ fontSize: '11px', color: '#94A3B8', marginBottom: '8px' }}>
+            미배정 좌석 {unassignedSeats.length}개 (재원생·예비원생 기준, 학생 등록 시 이 안에서 선택할 수 있어요)
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '88px', overflowY: 'auto' }}>
+            {unassignedSeats.length === 0 ? (
+              <span style={{ fontSize: '12px', color: '#CBD5E1' }}>모든 좌석이 배정됐어요 🎉</span>
+            ) : (
+              unassignedSeats.map(n => (
+                <span key={n} style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  width: '30px', height: '28px', borderRadius: '8px',
+                  background: '#ECFDF5', color: '#059669', border: '1px solid #A7F3D0',
+                  fontSize: '12px', fontWeight: 700,
+                }}>{n}</span>
+              ))
+            )}
+          </div>
         </div>
 
         {/* ✅ 상태 필터 탭 */}
@@ -397,7 +512,8 @@ export default function StudentManagement() {
       </div>
 
       {isModalOpen && (
-        <StudentModal student={editingStudent} onSave={handleSave} onClose={closeModal} loading={loading} />
+        <StudentModal student={editingStudent} onSave={handleSave} onClose={closeModal} loading={loading}
+          availableSeats={unassignedSeats} />
       )}
       {deleteTarget && (
         <DeleteDialog student={deleteTarget} onConfirm={handleDelete} onClose={() => setDeleteTarget(null)} loading={loading} />
@@ -407,8 +523,18 @@ export default function StudentManagement() {
 }
 
 // ── 등록/수정 모달 ──────────────────────────────────────
-function StudentModal({ student, onSave, onClose, loading }) {
+function StudentModal({ student, onSave, onClose, loading, availableSeats = [] }) {
   const isEdit = !!student
+
+  // ✅ [신규] 드롭다운에 보여줄 좌석번호 목록
+  //    "현재 비어있는 좌석" + "이 학생이 지금 쓰고 있는 좌석(수정 모드일 때)"을 합쳐서
+  //    숫자 순서로 정렬해요. (자기 자신의 좌석은 당연히 선택할 수 있어야 하니까요!)
+  const selectableSeats = useMemo(() => {
+    const set = new Set(availableSeats)
+    if (student?.seat_number != null) set.add(Number(student.seat_number))
+    return [...set].sort((a, b) => a - b)
+  }, [availableSeats, student])
+
   const [form, setForm] = useState({
     name:          student?.name          || '',
     grade:         student?.grade         || '',
@@ -565,10 +691,20 @@ function StudentModal({ student, onSave, onClose, loading }) {
                 onBlur={e=>Object.assign(e.target.style,blurStyle(false))} />
             </Field>
             <Field label="좌석번호" error={errors.seat_number}>
-              <input type="number" min="1" value={form.seat_number} onChange={e=>set('seat_number',e.target.value)} placeholder="예: 5"
+              <select value={form.seat_number} onChange={e => set('seat_number', e.target.value)}
                 style={inputStyle(!!errors.seat_number)}
                 onFocus={e=>Object.assign(e.target.style,focusStyle)}
-                onBlur={e=>Object.assign(e.target.style,blurStyle(errors.seat_number))} />
+                onBlur={e=>Object.assign(e.target.style,blurStyle(errors.seat_number))}>
+                <option value="">선택 안 함</option>
+                {selectableSeats.map(n => (
+                  <option key={n} value={n}>
+                    {n}번{student?.seat_number === n ? ' (현재 좌석)' : ''}
+                  </option>
+                ))}
+              </select>
+              <p style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px' }}>
+                💡 비어있는 좌석만 골라서 배정할 수 있어요 (범위는 학생 관리 화면 상단에서 설정)
+              </p>
             </Field>
           </div>
 

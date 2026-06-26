@@ -8,6 +8,7 @@ import {
 import { sendMeritNotification } from '../lib/sendMeritNotification' // ✅ 승인된 템플릿 변수 매핑
 import { getMonthlyPointTotals } from '../lib/pointsSummary'           // ✅ 이번 달 누적 상점/벌점 계산
 import { addPoint } from '../lib/addPoint'                             // ✅ RLS 우회해서 점수 저장 (서버 경유)
+import { fetchReasons, addReason, deleteReason } from '../lib/pointReasonsApi' // ✅ [수정] "상벌점 관리" 페이지와 같은 공용 사유 목록을 같이 써요
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -27,14 +28,11 @@ const supabase = createClient(
 //    승인된 템플릿과 한 글자도 다르지 않게 그대로 적어뒀어요.
 // ================================================================
 
-/* ── 사유 빠른 선택 목록 저장 (StudentPoints.jsx의 "점수 등록" 탭과 같은 저장소를 같이 써요) ── */
-const REASON_STORAGE_KEY = 'smc_point_reasons'
-const DEFAULT_REASONS = [
-  { id: 'r1', type: '상점', title: '성실한 출석',    points: 5 },
-  { id: 'r2', type: '상점', title: '시험 성적 향상', points: 10 },
-  { id: 'r3', type: '벌점', title: '무단 결석',       points: 5 },
-  { id: 'r4', type: '벌점', title: '규정 위반',       points: 5 },
-]
+/* ── 사유 빠른 선택 목록은 이제 Supabase(point_reasons 테이블)에서 가져와요.
+      "상벌점 관리" 페이지(StudentPoints.jsx)에서 등록한 사유와 완전히 같은 목록이에요.
+      예전에는 localStorage(개인 수첩)에 따로 저장돼서, 두 화면의 사유 목록이
+      서로 안 맞고 로그인한 브라우저마다 다르게 보였어요. 이제는 모두 같은
+      공용 캐비닛을 보게 돼서 어디서 열어봐도 똑같아요. ── */
 
 /* ── 오늘 날짜를 yyyy-MM-dd 문자열로 ── */
 const todayStr = () => {
@@ -96,6 +94,7 @@ export default function RewardNotification() {
 
   /* ── 사유 빠른 선택 관리 ── */
   const [reasonTemplates,   setReasonTemplates]   = useState([])
+  const [reasonsLoading,    setReasonsLoading]    = useState(true)   // ✅ [추가] 사유 목록 불러오는 중 표시
   const [showReasonManager, setShowReasonManager] = useState(false)
   const [newReasonText,     setNewReasonText]     = useState('')
   const [newReasonPoints,   setNewReasonPoints]   = useState('')
@@ -121,21 +120,20 @@ export default function RewardNotification() {
 
   useEffect(() => { fetchStudents() }, [fetchStudents])
 
-  /* ─ 사유 빠른 선택 목록 불러오기 ─ */
-  useEffect(() => {
+  /* ─ 사유 빠른 선택 목록 불러오기 (서버 공용 저장소에서, "상벌점 관리" 페이지와 동일) ─ */
+  const loadReasonTemplates = useCallback(async () => {
+    setReasonsLoading(true)
     try {
-      const saved = localStorage.getItem(REASON_STORAGE_KEY)
-      const list = saved ? JSON.parse(saved) : DEFAULT_REASONS
-      setReasonTemplates(list.map(r => ({ ...r, points: Number(r.points) > 0 ? Number(r.points) : 1 })))
+      const list = await fetchReasons()
+      setReasonTemplates(list)
     } catch {
-      setReasonTemplates(DEFAULT_REASONS)
+      // 실패해도 화면은 그대로 두고, 목록만 비워둬요 (입력은 계속 가능)
+      setReasonTemplates([])
     }
+    setReasonsLoading(false)
   }, [])
 
-  const saveReasonTemplates = (list) => {
-    localStorage.setItem(REASON_STORAGE_KEY, JSON.stringify(list))
-    setReasonTemplates(list)
-  }
+  useEffect(() => { loadReasonTemplates() }, [loadReasonTemplates])
 
   const filteredReasons = reasonTemplates.filter(r => r.type === type)
 
@@ -151,22 +149,35 @@ export default function RewardNotification() {
     if (matched) setScore(String(matched.points))
   }
 
-  const handleAddReason = () => {
+  /* ─ 새 사유 추가 (서버 공용 저장소에 저장 → "상벌점 관리" 페이지에도 똑같이 보여요) ─ */
+  const handleAddReason = async () => {
     const title = newReasonText.trim()
     const pts = Number(newReasonPoints)
     if (!title) return
     if (!pts || pts <= 0) { alert('이 사유에 부여할 점수를 입력해주세요'); return }
     if (filteredReasons.some(r => r.title === title)) { alert('이미 등록된 사유예요'); return }
-    const updated = [...reasonTemplates, { id: Date.now().toString(), type, title, points: pts }]
-    saveReasonTemplates(updated)
+    try {
+      await addReason({ type, title, points: pts })
+    } catch (err) {
+      alert('사유 등록 실패: ' + err.message)
+      return
+    }
+    await loadReasonTemplates()  // ✅ 등록 후 다시 불러와서 "상벌점 관리" 페이지와 항상 같은 목록을 보게 함
     setReason(title)
     setScore(String(pts))
     setNewReasonText('')
     setNewReasonPoints('')
   }
 
-  const handleDeleteReason = (id, title) => {
-    saveReasonTemplates(reasonTemplates.filter(r => r.id !== id))
+  /* ─ 사유 삭제 (서버 공용 저장소에서) ─ */
+  const handleDeleteReason = async (id, title) => {
+    try {
+      await deleteReason(id)
+    } catch (err) {
+      alert('사유 삭제 실패: ' + err.message)
+      return
+    }
+    await loadReasonTemplates()
     if (reason === title) setReason('')
   }
 
@@ -521,7 +532,9 @@ export default function RewardNotification() {
               </p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
                 {filteredReasons.length === 0 ? (
-                  <span style={{ fontSize: '12px', color: '#CBD5E1' }}>등록된 사유가 없어요</span>
+                  <span style={{ fontSize: '12px', color: '#CBD5E1' }}>
+                    {reasonsLoading ? '불러오는 중...' : '등록된 사유가 없어요'}
+                  </span>
                 ) : (
                   filteredReasons.map(r => {
                     const b = typeBadge(type)

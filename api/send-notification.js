@@ -9,6 +9,15 @@
 // ================================================================
 
 import crypto from 'crypto' // Node.js 내장 암호화 모듈 (설치 불필요)
+import { createClient } from '@supabase/supabase-js' // ✅ [추가] 발송 기록을 남기기 위해 사용
+
+// ✅ [추가] 발송 기록(notification_logs)을 저장하기 위한 서버 전용 클라이언트
+//    비유: add-point.js, get-reasons.js 등에서 이미 쓰는 "직원증(서비스 키)"을
+//    여기서도 똑같이 재사용해요. 추가로 등록할 환경변수는 없어요!
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY
+)
 
 // ──────────────────────────────────────────────────────────────
 // Solapi 인증 헤더 생성 함수
@@ -155,6 +164,16 @@ export default async function handler(req, res) {
     if (!response.ok) {
       // Solapi가 에러를 반환한 경우
       console.error('[Solapi 에러]', JSON.stringify(data))
+
+      // ✅ [추가] 이 경우도 "발송 실패"로 기록
+      await logNotification({
+        to, type, variables,
+        sendStatus: 'failed',
+        errorMessage: data.errorMessage || '발송 실패',
+        statusCode: data?.statusCode,
+        statusMessage: data?.statusMessage,
+      })
+
       return res.status(response.status).json({
         error:  data.errorMessage || '발송 실패',
         detail: data,
@@ -163,10 +182,56 @@ export default async function handler(req, res) {
 
     // 성공!
     console.log('[발송 성공]', JSON.stringify(data))
+
+    // ✅ [추가] 발송 일지(notification_logs)에 한 줄 기록
+    //    비유: 우체국 직원이 "몇 시에 누구에게 무엇을 부쳤는지" 장부에 적는 것과 같아요.
+    //    여기 기록이 실패해도 발송 자체는 이미 성공했으니, 사용자에게는 그대로 성공 응답을 줘요.
+    await logNotification({
+      to, type, variables,
+      sendStatus: 'sent',
+      groupId:      data?.groupId,
+      messageId:    data?.messageId,
+      statusCode:   data?.statusCode,
+      statusMessage:data?.statusMessage,
+    })
+
     return res.status(200).json({ success: true, data })
 
   } catch (err) {
     console.error('[서버 오류]', err)
+
+    // ✅ [추가] 발송 실패도 기록해둬야 "왜 안 갔는지" 나중에 확인할 수 있어요
+    await logNotification({
+      to, type, variables,
+      sendStatus: 'failed',
+      errorMessage: err.message,
+    })
+
     return res.status(500).json({ error: '서버 오류: ' + err.message })
+  }
+}
+
+// ──────────────────────────────────────────────────────────────
+// ✅ [신규] 발송 기록 저장 함수
+// (비유: 영수증을 발송 일지에 끼워 넣는 역할. 이게 실패해도
+//  알림톡 발송 자체에는 영향이 없도록 try/catch로 감싸요)
+// ──────────────────────────────────────────────────────────────
+async function logNotification({ to, type, variables, sendStatus, groupId, messageId, statusCode, statusMessage, errorMessage }) {
+  try {
+    const studentName = variables?.['#{학생이름}'] || null
+    await supabaseAdmin.from('notification_logs').insert({
+      student_name: studentName,
+      phone: to,
+      notify_type: type || null,
+      send_status: sendStatus,
+      error_message: errorMessage || null,
+      solapi_group_id: groupId || null,
+      solapi_message_id: messageId || null,
+      solapi_status_code: statusCode || null,
+      solapi_status_message: statusMessage || null,
+    })
+  } catch (logErr) {
+    // 기록 실패는 조용히 로그만 남기고 넘어가요 (발송 결과에 영향 주지 않음)
+    console.error('[발송 기록 저장 실패]', logErr)
   }
 }

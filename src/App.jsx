@@ -10,6 +10,8 @@ import StudentPoints from './pages/StudentPoints'   // ✅ 신규: 상벌점 관
 import StaffManagement from './pages/StaffManagement'   // ✅ 신규
 import PublicScheduleView from './pages/PublicScheduleView' // ✅ 공개 시간표 뷰
 import Apply from './pages/Apply' // ✅ [신규] 신청서 공개 페이지
+import NotificationLogs from './pages/NotificationLogs' // ✅ [신규] 알림톡 발송 결과 확인
+import Manuals from './pages/Manuals' // ✅ [신규] 매뉴얼 저장함
 import ProtectedRoute from './components/ProtectedRoute'
 
 export default function App() {
@@ -41,6 +43,10 @@ export default function App() {
         <Route path="/notifications/rewards" element={
           <ProtectedRoute><RewardNotification /></ProtectedRoute>
         } />
+        {/* ✅ [신규] 알림톡 발송 결과 확인 */}
+        <Route path="/notifications/logs" element={
+          <ProtectedRoute><NotificationLogs /></ProtectedRoute>
+        } />
 
         {/* ✅ 상벌점 관리 */}
         <Route path="/points" element={
@@ -50,6 +56,11 @@ export default function App() {
         {/* ✅ 직원 근무표 */}
         <Route path="/staff" element={
           <ProtectedRoute><StaffManagement /></ProtectedRoute>
+        } />
+
+        {/* ✅ [신규] 매뉴얼 저장함 */}
+        <Route path="/manuals" element={
+          <ProtectedRoute><Manuals /></ProtectedRoute>
         } />
 
         {/* ✅ 공개 시간표 뷰 - 로그인 없이 접근 가능 */}
