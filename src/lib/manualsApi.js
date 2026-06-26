@@ -30,9 +30,14 @@ export async function fetchManuals() {
 /** 새 매뉴얼 파일을 업로드하고 목록에 등록합니다. */
 export async function uploadManual({ title, file }) {
   // ① Storage(서가)에 실제 파일을 올려요.
-  //    파일명이 겹치지 않게 "시각_원래파일명"으로 저장해요.
-  const safeName = file.name.replace(/[^\w.\-가-힣]/g, '_')
-  const path = `${Date.now()}_${safeName}`
+  //    ⚠️ Supabase Storage는 저장 "경로(키)"에 한글 등 영문/숫자 외 글자가
+  //       들어가면 "Invalid key" 오류를 내요. (운송장에는 영어 주소만 가능한 것과 비슷해요)
+  //       그래서 실제 저장 경로는 영문/숫자만 남기고, 화면에 보여줄 "원래 파일명"은
+  //       따로 manuals 테이블(file_name 칸)에 한글 그대로 저장해둬요.
+  const lastDot = file.name.lastIndexOf('.')
+  const ext = lastDot >= 0 ? file.name.slice(lastDot) : ''
+  const safeExt = ext.replace(/[^\w.]/g, '') || ''
+  const path = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}${safeExt}`
 
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
