@@ -749,12 +749,13 @@ export default function ScheduleManagement() {
                             padding:'8px 6px', textAlign:'center',
                             fontWeight:700, fontSize:'13px', color:'#374151', fontFamily:'monospace',
                           }}>
-                            {schedule?.seat_number
+                            {/* 스케줄 좌석번호 우선, 없으면 학생 좌석번호 자동 반영 */}
+                            {(schedule?.seat_number || student.seat_number)
                               ? <span style={{
                                   display:'inline-flex', alignItems:'center', justifyContent:'center',
                                   width:'26px', height:'26px', borderRadius:'8px',
                                   background:'#EEF2FF', color:'#6366F1', fontSize:'12px', fontWeight:700,
-                                }}>{schedule.seat_number}</span>
+                                }}>{schedule?.seat_number || student.seat_number}</span>
                               : <span style={{ color:'#CBD5E1' }}>–</span>
                             }
                           </td>

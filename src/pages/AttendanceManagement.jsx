@@ -49,14 +49,73 @@ export default function AttendanceManagement() {
   // 특이사항 팝업
   const [notesPopup, setNotesPopup] = useState(null)  // { name, notes }
 
+  // 과거 날짜 여부 (오늘 기준)
+  const [isPastDate, setIsPastDate] = useState(false)
+
   useEffect(() => { fetchAttendance(); setLocalText({}); setFilterPeriod(0) }, [selectedDate])
 
   const fetchAttendance = async () => {
     setLoading(true)
-    const dow     = new Date(selectedDate + 'T00:00:00').getDay()
+    const today  = getToday()
+    const past   = selectedDate < today
+    setIsPastDate(past)
+    const dow    = new Date(selectedDate + 'T00:00:00').getDay()
     const slotKey = DAY_SLOT_KEYS[dow]
 
-    // 재원생만 불러오기 (schedules를 통해 student 조회) + 첫등원일자 포함
+    // ── 과거 날짜: 실제 출결 기록 기반 표시 ────────────────────────────
+    // 퇴원생도 포함, 스케줄 변경 무관 → 그날의 기록이 절대 사라지지 않음
+    if (past) {
+      const { data: attData } = await supabase
+        .from('attendance')
+        .select('*, students(id, name, seat_number, school, grade, special_notes, status, first_attendance_date)')
+        .eq('date', selectedDate)
+
+      if (!attData || attData.length === 0) {
+        setRows([])
+        setLoading(false)
+        return
+      }
+
+      // 학생별로 교시 목록 + 출결 기록 수집
+      const studentMap = {}
+      for (const att of attData) {
+        if (!att.students) continue
+        const sid = att.student_id
+        if (!studentMap[sid]) {
+          studentMap[sid] = {
+            scheduleId:   null,
+            studentId:    sid,
+            studentName:  att.students.name,
+            seatNumber:   att.students.seat_number ?? null,
+            school:       att.students.school,
+            grade:        att.students.grade,
+            specialNotes: att.students.special_notes || '',
+            allPeriods:   [],
+            periodAttMap: {},
+          }
+        }
+        studentMap[sid].allPeriods.push(att.period)
+        studentMap[sid].periodAttMap[att.period] = att
+      }
+
+      // 첫 번째(최소) 교시를 대표 행으로 사용
+      const pastRows = []
+      for (const rowBase of Object.values(studentMap)) {
+        rowBase.allPeriods.sort((a, b) => a - b)
+        const minPeriod = rowBase.allPeriods[0]
+        pastRows.push({
+          ...rowBase,
+          period:     minPeriod,
+          attendance: rowBase.periodAttMap[minPeriod] || null,
+        })
+      }
+
+      setRows(pastRows)
+      setLoading(false)
+      return
+    }
+
+    // ── 오늘/미래: 기존 스케줄 기반 로직 ────────────────────────────────
     const { data: schedules, error } = await supabase
       .from('schedules')
       .select('*, students(id,name,seat_number,school,grade,special_notes,status,first_attendance_date)')
@@ -67,16 +126,11 @@ export default function AttendanceManagement() {
     for (const sch of schedules) {
       const slots   = sch[slotKey]
       const student = sch.students
-      // 재원생만 표시
       if (!Array.isArray(slots) || slots.length === 0 || !student) continue
       if ((student.status || '재원생') !== '재원생') continue
-
-      // 첫등원일자 체크: 선택한 날짜가 첫등원일 이전이면 등원기록에서 제외
       if (student.first_attendance_date && selectedDate < student.first_attendance_date) continue
 
-      // 오늘 해당 학생의 전체 교시 목록 저장
       const allPeriods = [...slots].sort((a,b) => a-b)
-
       for (const period of allPeriods) {
         allRows.push({
           scheduleId:   sch.id,
@@ -87,12 +141,11 @@ export default function AttendanceManagement() {
           grade:        student.grade,
           specialNotes: student.special_notes || '',
           period,
-          allPeriods,   // 오늘 전체 교시
+          allPeriods,
         })
       }
     }
 
-    // 학생당 첫 번째 교시만 행으로 표시 (나머지는 allPeriods 컬럼에 표시)
     const studentMinPeriod = {}
     for (const row of allRows) {
       if (!studentMinPeriod[row.studentId] || row.period < studentMinPeriod[row.studentId].period)
@@ -322,8 +375,17 @@ export default function AttendanceManagement() {
         ) : rows.length === 0 ? (
           <div style={{ textAlign:'center', padding:'80px 0', background:'#fff', borderRadius:'16px', border:'1px solid #E2E8F0', color:'#94A3B8' }}>
             <p style={{ fontSize:'40px', marginBottom:'12px' }}>📭</p>
-            <p style={{ fontWeight:600, color:'#64748B' }}>이 날은 등원 예정 학생이 없어요</p>
-            <p style={{ fontSize:'13px', marginTop:'4px' }}>스케줄 관리에서 스케줄을 먼저 등록해주세요</p>
+            {isPastDate ? (
+              <>
+                <p style={{ fontWeight:600, color:'#64748B' }}>이 날은 기록된 출결 데이터가 없어요</p>
+                <p style={{ fontSize:'13px', marginTop:'4px' }}>과거 날짜는 실제 출결 기록이 있어야 표시됩니다</p>
+              </>
+            ) : (
+              <>
+                <p style={{ fontWeight:600, color:'#64748B' }}>이 날은 등원 예정 학생이 없어요</p>
+                <p style={{ fontSize:'13px', marginTop:'4px' }}>스케줄 관리에서 스케줄을 먼저 등록해주세요</p>
+              </>
+            )}
           </div>
         ) : (
           <div style={{ background:'#fff', borderRadius:'16px', border:'1px solid #E2E8F0', overflowX:'auto', boxShadow:'0 1px 4px rgba(0,0,0,0.04)' }}>
