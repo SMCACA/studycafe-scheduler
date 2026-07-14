@@ -1425,194 +1425,262 @@ export default function ScheduleManagement() {
         </div>
       )}
 
-      {/* --
-          모달: 예비 스케줄 직접 편집 (전체화면)
-      -- */}
+      {/* -- 모달: 예비 스케줄 직접 편집 (전체화면 테이블) -- */}
       {isBackupEditOpen && (
         <div style={{
-          position:'fixed', inset:0, background:'#F8FAFC',
+          position:'fixed', inset:0,
           display:'flex', flexDirection:'column', zIndex:60, overflow:'hidden',
+          background:'#0F172A',
         }}>
-          {/* 상단 헤더 */}
+          {/* 헤더 */}
           <div style={{
-            background:'#fff', borderBottom:'1px solid #E2E8F0',
-            padding:'16px 24px', display:'flex', alignItems:'center', gap:'16px', flexShrink:0,
-            boxShadow:'0 2px 8px rgba(0,0,0,0.05)',
+            background:'linear-gradient(135deg,#1E1B4B,#312E81)',
+            padding:'0 24px', display:'flex', alignItems:'center', gap:'16px',
+            height:'58px', flexShrink:0,
+            boxShadow:'0 4px 16px rgba(0,0,0,0.3)',
           }}>
-            <div style={{ display:'flex', alignItems:'center', gap:'12px', flex:1, minWidth:0 }}>
-              <div style={{ width:'38px', height:'38px', borderRadius:'10px', background:'linear-gradient(135deg,#7C3AED,#6366F1)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                <Edit2 size={18} style={{ color:'#fff' }} />
+            <div style={{ display:'flex', alignItems:'center', gap:'10px', flex:1, minWidth:0 }}>
+              <div style={{
+                width:'32px', height:'32px', borderRadius:'8px', flexShrink:0,
+                background:'rgba(165,180,252,0.2)',
+                display:'flex', alignItems:'center', justifyContent:'center',
+              }}>
+                <Edit2 size={16} style={{ color:'#A5B4FC' }} />
               </div>
               <div style={{ minWidth:0 }}>
-                <p style={{ fontSize:'11px', color:'#94A3B8', margin:0, fontWeight:600 }}>예비 스케줄 직접 편집</p>
+                <p style={{ fontSize:'10px', color:'#818CF8', margin:0, fontWeight:700, letterSpacing:'0.08em' }}>
+                  예비 스케줄 직접 편집
+                </p>
                 <input
                   value={backupEditName}
                   onChange={e => setBackupEditName(e.target.value)}
-                  placeholder="예비 스케줄 이름 입력 (필수)"
+                  placeholder="예비 스케줄 이름을 입력하세요 (필수)"
                   style={{
-                    fontSize:'17px', fontWeight:700, color:'#0F172A',
+                    fontSize:'15px', fontWeight:700, color:'#fff',
                     border:'none', outline:'none', background:'transparent',
-                    width:'340px', padding:0,
+                    borderBottom:'1.5px solid rgba(165,180,252,0.4)',
+                    width:'320px', padding:'1px 0',
                   }}
                 />
               </div>
+              <span style={{ fontSize:'12px', color:'#64748B', flexShrink:0, marginLeft:'8px' }}>
+                재원생 {students.length}명
+              </span>
             </div>
-            <p style={{ fontSize:'12px', color:'#94A3B8', margin:0, flexShrink:0 }}>
-              재원생 {students.length}명
-            </p>
             <div style={{ display:'flex', gap:'8px', flexShrink:0 }}>
-              <button
-                onClick={() => setIsBackupEditOpen(false)}
-                style={{
-                  padding:'9px 18px', borderRadius:'10px', border:'1.5px solid #E2E8F0',
-                  background:'#fff', color:'#64748B', fontSize:'13px', fontWeight:600, cursor:'pointer',
-                }}
-              >취소</button>
-              <button
-                onClick={handleSaveBackupEdit}
-                disabled={backupEditLoading}
-                style={{
-                  display:'flex', alignItems:'center', gap:'8px',
-                  padding:'9px 20px', borderRadius:'10px', border:'none',
-                  background:'linear-gradient(135deg,#7C3AED,#6366F1)',
-                  color:'#fff', fontSize:'13px', fontWeight:700, cursor:'pointer',
-                  opacity: backupEditLoading ? 0.6 : 1,
-                  boxShadow:'0 4px 12px rgba(124,58,237,0.3)',
-                }}
-              >
-                <Save size={14} /> {backupEditLoading ? '저장 중…' : '저장 완료'}
+              <button onClick={() => setIsBackupEditOpen(false)} style={{
+                padding:'8px 16px', borderRadius:'8px',
+                border:'1px solid rgba(255,255,255,0.15)', background:'rgba(255,255,255,0.08)',
+                color:'#94A3B8', fontSize:'13px', fontWeight:600, cursor:'pointer',
+              }}>취소</button>
+              <button onClick={handleSaveBackupEdit} disabled={backupEditLoading} style={{
+                display:'flex', alignItems:'center', gap:'6px',
+                padding:'8px 20px', borderRadius:'8px', border:'none',
+                background: backupEditLoading ? '#4F46E5' : 'linear-gradient(135deg,#7C3AED,#6366F1)',
+                color:'#fff', fontSize:'13px', fontWeight:700, cursor: backupEditLoading ? 'not-allowed' : 'pointer',
+                boxShadow:'0 4px 14px rgba(99,102,241,0.4)',
+                opacity: backupEditLoading ? 0.7 : 1,
+              }}>
+                <Save size={13} /> {backupEditLoading ? '저장 중...' : '저장 완료'}
               </button>
             </div>
           </div>
 
           {/* 안내 배너 */}
-          <div style={{ padding:'10px 24px', background:'#EEF2FF', borderBottom:'1px solid #C7D2FE', flexShrink:0 }}>
-            <p style={{ fontSize:'12px', color:'#4338CA', margin:0 }}>
-              💡 재원생별로 요일·교시를 선택하세요. 저장 후 "불러오기"로 현재 스케줄에 적용할 수 있어요.
+          <div style={{
+            padding:'8px 24px', background:'#1E293B',
+            borderBottom:'1px solid rgba(255,255,255,0.06)', flexShrink:0,
+          }}>
+            <p style={{ fontSize:'12px', color:'#64748B', margin:0 }}>
+              각 학생의 요일별 교시 버튼을 눌러 스케줄을 설정하세요. 파란색 = 선택됨. 저장 후 "불러오기"로 현재 스케줄에 적용할 수 있어요.
             </p>
           </div>
 
-          {/* 학생 목록 */}
+          {/* 테이블 본문 */}
           {backupEditLoading ? (
-            <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'#94A3B8', fontSize:'14px' }}>
+            <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'#475569', fontSize:'14px' }}>
               불러오는 중...
             </div>
           ) : (
-            <div style={{ flex:1, overflowY:'auto', padding:'16px 24px', display:'flex', flexDirection:'column', gap:'12px' }}>
-              {students.length === 0 ? (
-                <div style={{ textAlign:'center', padding:'80px', color:'#94A3B8' }}>
-                  <p style={{ fontSize:'32px', marginBottom:'8px' }}>👤</p>
-                  <p>등록된 재원생이 없어요</p>
-                </div>
-              ) : students.map(stu => {
-                const item = backupEditItems[stu.id] || {}
-                const memType = item.membership_type || '풀'
-                return (
-                  <div key={stu.id} style={{
-                    background:'#fff', borderRadius:'16px', border:'1px solid #E2E8F0',
-                    boxShadow:'0 1px 4px rgba(0,0,0,0.04)', overflow:'hidden',
-                  }}>
-                    {/* 학생 헤더 */}
-                    <div style={{
-                      display:'flex', alignItems:'center', gap:'14px',
-                      padding:'13px 20px', background:'#F8FAFF', borderBottom:'1px solid #E2E8F0',
-                    }}>
-                      <div style={{
-                        width:'34px', height:'34px', borderRadius:'9px', flexShrink:0,
-                        background:'linear-gradient(135deg,#6366F1,#7C3AED)',
-                        display:'flex', alignItems:'center', justifyContent:'center',
-                        color:'#fff', fontSize:'13px', fontWeight:700,
-                      }}>{stu.name.slice(0,1)}</div>
-                      <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
-                          <span style={{ fontSize:'15px', fontWeight:700, color:'#0F172A' }}>{stu.name}</span>
-                          {stu.grade && (
-                            <span style={{
-                              padding:'2px 8px', borderRadius:'999px', fontSize:'11px', fontWeight:700,
-                              background: stu.grade.startsWith('고') ? '#EEF2FF' : '#ECFDF5',
-                              color:      stu.grade.startsWith('고') ? '#4F46E5' : '#059669',
-                            }}>{stu.grade}</span>
-                          )}
-                        </div>
-                        <p style={{ fontSize:'11px', color:'#94A3B8', margin:'2px 0 0' }}>
-                          좌석: {item.seat_number || stu.seat_number || '미지정'}
-                        </p>
-                      </div>
-                      {/* 재원 구분 */}
-                      <div style={{ display:'flex', gap:'4px', flexShrink:0 }}>
-                        {['평일','주말','풀'].map(type => (
-                          <button key={type} type="button"
-                            onClick={() => setBackupEditItems(prev => ({
-                              ...prev,
-                              [stu.id]: { ...(prev[stu.id] || {}), membership_type: type }
-                            }))}
-                            style={{
-                              padding:'5px 12px', borderRadius:'8px', fontSize:'12px', fontWeight:700, cursor:'pointer',
-                              border:'none', transition:'all 0.12s',
-                              background: memType === type ? '#6366F1' : '#F1F5F9',
-                              color:      memType === type ? '#fff'    : '#64748B',
-                            }}
-                          >{type}</button>
-                        ))}
-                      </div>
-                    </div>
+            <div style={{ flex:1, overflowY:'auto', overflowX:'auto' }}>
+              <table style={{ borderCollapse:'separate', borderSpacing:0, minWidth:'100%' }}>
 
-                    {/* 요일별 교시 선택 */}
-                    <div style={{ padding:'14px 20px', display:'flex', flexDirection:'column', gap:'8px' }}>
-                      {dayConfig.map(day => {
-                        const avail = isDayAvailable(memType, day.type)
-                        const cur   = item[day.key] || []
-                        return (
-                          <div key={day.key} style={{
-                            display:'flex', alignItems:'center', gap:'12px',
-                            opacity: avail ? 1 : 0.3,
-                          }}>
-                            <div style={{ width:'84px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                              <span style={{ fontSize:'13px', fontWeight:700, color: avail ? day.color : '#94A3B8' }}>
-                                {day.label}요일
-                              </span>
-                              {avail && (
-                                <button type="button"
-                                  onClick={() => toggleBackupAllDay(stu.id, day.key, day.slots)}
-                                  style={{ fontSize:'10px', color:'#94A3B8', background:'none', border:'none', cursor:'pointer', fontWeight:600, padding:0 }}
-                                >
-                                  {cur.length === day.slots ? '해제' : '전체'}
-                                </button>
+                {/* 고정 헤더 행 */}
+                <thead style={{ position:'sticky', top:0, zIndex:20 }}>
+                  <tr>
+                    <th style={{
+                      position:'sticky', left:0, zIndex:30,
+                      background:'#1E293B', color:'#64748B',
+                      fontSize:'11px', fontWeight:700, letterSpacing:'0.06em',
+                      padding:'10px 20px', textAlign:'left', whiteSpace:'nowrap',
+                      borderRight:'1px solid rgba(255,255,255,0.08)',
+                      borderBottom:'1px solid rgba(255,255,255,0.08)',
+                      width:'160px', minWidth:'160px',
+                    }}>학생</th>
+                    <th style={{
+                      background:'#1E293B', color:'#64748B',
+                      fontSize:'11px', fontWeight:700,
+                      padding:'10px 12px', textAlign:'center', whiteSpace:'nowrap',
+                      borderRight:'1px solid rgba(255,255,255,0.08)',
+                      borderBottom:'1px solid rgba(255,255,255,0.08)',
+                      width:'100px', minWidth:'100px',
+                    }}>재원구분</th>
+                    {dayConfig.map(day => (
+                      <th key={day.key} style={{
+                        background:'#1E293B',
+                        fontSize:'11px', fontWeight:700,
+                        padding:'10px 16px', textAlign:'center', whiteSpace:'nowrap',
+                        borderRight:'1px solid rgba(255,255,255,0.05)',
+                        borderBottom:'1px solid rgba(255,255,255,0.08)',
+                        minWidth:'130px',
+                        color: day.color,
+                      }}>
+                        {day.label}요일
+                        <span style={{ color:'#475569', fontWeight:400, marginLeft:'4px' }}>({day.slots}교시)</span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+
+                {/* 데이터 행 */}
+                <tbody>
+                  {students.length === 0 ? (
+                    <tr>
+                      <td colSpan={dayConfig.length + 2} style={{ textAlign:'center', padding:'60px', color:'#475569', fontSize:'14px' }}>
+                        등록된 재원생이 없어요
+                      </td>
+                    </tr>
+                  ) : students.map((stu, idx) => {
+                    const item = backupEditItems[stu.id] || {}
+                    const memType = item.membership_type || '풀'
+                    const isEven = idx % 2 === 0
+                    const rowBg = isEven ? '#1A2035' : '#161C2E'
+                    return (
+                      <tr key={stu.id}>
+                        {/* 학생 정보 (고정 열) */}
+                        <td style={{
+                          position:'sticky', left:0, zIndex:10,
+                          background: rowBg,
+                          padding:'10px 20px',
+                          borderRight:'1px solid rgba(255,255,255,0.08)',
+                          borderBottom:'1px solid rgba(255,255,255,0.04)',
+                          verticalAlign:'middle',
+                          whiteSpace:'nowrap',
+                        }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                            <div style={{
+                              width:'30px', height:'30px', borderRadius:'8px', flexShrink:0,
+                              background:'linear-gradient(135deg,#6366F1,#7C3AED)',
+                              display:'flex', alignItems:'center', justifyContent:'center',
+                              color:'#fff', fontSize:'12px', fontWeight:700,
+                            }}>{stu.name.slice(0,1)}</div>
+                            <div>
+                              <p style={{ fontSize:'13px', fontWeight:700, color:'#E2E8F0', margin:0 }}>{stu.name}</p>
+                              {stu.grade && (
+                                <p style={{ fontSize:'11px', color:'#475569', margin:'2px 0 0' }}>{stu.grade}</p>
                               )}
                             </div>
-                            <div style={{ display:'flex', gap:'4px', flexWrap:'wrap' }}>
-                              {Array.from({ length: day.slots }, (_, i) => {
-                                const n = i + 1
-                                const checked = cur.includes(n)
-                                return (
-                                  <button key={n} type="button"
-                                    onClick={() => avail && toggleBackupSlot(stu.id, day.key, n)}
-                                    disabled={!avail}
-                                    style={{
-                                      width:'32px', height:'32px', borderRadius:'8px',
-                                      border: checked ? 'none' : '1.5px solid #E2E8F0',
-                                      cursor: avail ? 'pointer' : 'not-allowed',
-                                      fontSize:'12px', fontWeight:700, transition:'all 0.1s',
-                                      background: checked ? day.color : '#F8FAFC',
-                                      color:      checked ? '#fff'    : '#94A3B8',
-                                      boxShadow: checked ? `0 2px 6px ${day.color}4D` : 'none',
-                                    }}
-                                  >{n}</button>
-                                )
-                              })}
-                            </div>
-                            {avail && cur.length > 0 && (
-                              <span style={{ fontSize:'11px', color:day.color, fontWeight:700, flexShrink:0 }}>
-                                {cur.length}교시
-                              </span>
-                            )}
                           </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })}
+                        </td>
+
+                        {/* 재원구분 */}
+                        <td style={{
+                          background: rowBg,
+                          padding:'10px 12px',
+                          borderRight:'1px solid rgba(255,255,255,0.08)',
+                          borderBottom:'1px solid rgba(255,255,255,0.04)',
+                          verticalAlign:'middle', textAlign:'center',
+                        }}>
+                          <div style={{ display:'flex', flexDirection:'column', gap:'3px', alignItems:'center' }}>
+                            {['풀','평일','주말'].map(type => (
+                              <button key={type} type="button"
+                                onClick={() => setBackupEditItems(prev => ({
+                                  ...prev,
+                                  [stu.id]: { ...(prev[stu.id] || {}), membership_type: type }
+                                }))}
+                                style={{
+                                  padding:'3px 10px', borderRadius:'5px', width:'52px',
+                                  fontSize:'11px', fontWeight:700, cursor:'pointer',
+                                  border: memType === type ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                                  background: memType === type
+                                    ? (type === '풀' ? '#059669' : type === '평일' ? '#6366F1' : '#D97706')
+                                    : 'rgba(255,255,255,0.04)',
+                                  color: memType === type ? '#fff' : '#475569',
+                                  transition:'all 0.1s',
+                                }}
+                              >{type}</button>
+                            ))}
+                          </div>
+                        </td>
+
+                        {/* 요일별 교시 버튼 */}
+                        {dayConfig.map(day => {
+                          const avail = isDayAvailable(memType, day.type)
+                          const cur   = item[day.key] || []
+                          const allSel = cur.length === day.slots && day.slots > 0
+                          return (
+                            <td key={day.key} style={{
+                              background: avail ? rowBg : (isEven ? '#141824' : '#111520'),
+                              padding:'8px 14px',
+                              borderRight:'1px solid rgba(255,255,255,0.04)',
+                              borderBottom:'1px solid rgba(255,255,255,0.04)',
+                              verticalAlign:'middle',
+                            }}>
+                              {avail ? (
+                                <div>
+                                  {/* 선택 현황 + 전체 버튼 */}
+                                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'5px' }}>
+                                    <span style={{
+                                      fontSize:'10px', fontWeight:700,
+                                      color: cur.length > 0 ? day.color : '#334155',
+                                    }}>
+                                      {cur.length > 0 ? `${cur.length}교시` : '없음'}
+                                    </span>
+                                    <button type="button"
+                                      onClick={() => toggleBackupAllDay(stu.id, day.key, day.slots)}
+                                      style={{
+                                        fontSize:'10px', fontWeight:700, cursor:'pointer',
+                                        padding:'2px 6px', borderRadius:'4px',
+                                        border:'none',
+                                        background: allSel ? day.color : 'rgba(255,255,255,0.08)',
+                                        color: allSel ? '#fff' : '#64748B',
+                                        transition:'all 0.1s',
+                                      }}
+                                    >{allSel ? '전해제' : '전체'}</button>
+                                  </div>
+                                  {/* 교시 버튼 */}
+                                  <div style={{ display:'flex', flexWrap:'wrap', gap:'3px' }}>
+                                    {Array.from({ length: day.slots }, (_, i) => {
+                                      const n = i + 1
+                                      const on = cur.includes(n)
+                                      return (
+                                        <button key={n} type="button"
+                                          onClick={() => toggleBackupSlot(stu.id, day.key, n)}
+                                          style={{
+                                            width:'26px', height:'26px', borderRadius:'6px',
+                                            border: on ? 'none' : '1px solid rgba(255,255,255,0.1)',
+                                            cursor:'pointer', fontSize:'11px', fontWeight:700,
+                                            background: on ? day.color : 'rgba(255,255,255,0.05)',
+                                            color: on ? '#fff' : '#334155',
+                                            boxShadow: on ? `0 2px 6px ${day.color}60` : 'none',
+                                            transition:'all 0.1s',
+                                          }}
+                                        >{n}</button>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{ textAlign:'center', color:'#1E293B', fontSize:'13px', userSelect:'none' }}>—</div>
+                              )}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

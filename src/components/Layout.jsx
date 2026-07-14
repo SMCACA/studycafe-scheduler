@@ -19,7 +19,7 @@ const TOPBAR_H  = 58
 const menuItems = [
   { label: '대시보드',  path: '/dashboard',  icon: LayoutDashboard },
   { label: '학생 관리', path: '/students',   icon: Users },
-  { label: '상벨점 관리', path: '/points',   icon: Award },
+  { label: '상벌점 관리', path: '/points',   icon: Award },
   {
     label: '스케줄 관리', path: '/schedules', icon: CalendarDays,
     children: [
@@ -31,7 +31,7 @@ const menuItems = [
     label: '알림톡', path: '/notifications', icon: MessageSquare,
     children: [
       { label: '스케줄 알림톡', path: '/notifications/schedule', icon: Eye        },
-      { label: '상벨점 알림톡', path: '/notifications/rewards',  icon: Star       },
+      { label: '상벌점 알림톡', path: '/notifications/rewards',  icon: Star       },
       { label: '발송 결과 확인', path: '/notifications/logs',    icon: BarChart3  },
       { label: '문구 저장',     path: '/notifications/messages', icon: BookMarked },
     ],
@@ -45,11 +45,11 @@ function getPageTitle(p) {
   const map = {
     '/dashboard':              '대시보드',
     '/students':               '학생 관리',
-    '/points':                 '상벨점 관리',
+    '/points':                 '상벌점 관리',
     '/schedules':              '스케줄 설정',
     '/schedules/attendance':   '등원 기록',
     '/notifications/schedule': '스케줄 알림톡',
-    '/notifications/rewards':  '상벨점 알림톡',
+    '/notifications/rewards':  '상벌점 알림톡',
     '/notifications/logs':     '발송 결과 확인',
     '/notifications/messages': '문구 저장',
     '/calendar':               '학사 캘린더',
