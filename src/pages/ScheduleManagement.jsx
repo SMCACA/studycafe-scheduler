@@ -296,8 +296,9 @@ export default function ScheduleManagement() {
   }
 
   // -- 예비 스케줄: 현재로 불러오기 --
-  const handleLoadBackup = async (setId, setName) => {
-    if (!window.confirm(`"${setName}" 예비 스케줄을 불러올까요?\n현재 스케줄이 이 내용으로 교체됩니다.\n\n현재 스케줄을 먼저 저장해두지 않으셨다면 취소 후 저장 먼저 해주세요.`)) return
+  const handleLoadBackup = async (setId, setName, slotsConfig) => {
+    const slotMsg = slotsConfig ? '\n교시 수도 이 예비 스케줄의 설정으로 함께 변경됩니다.' : ''
+    if (!window.confirm(`"${setName}" 예비 스케줄을 불러올까요?\n현재 스케줄이 이 내용으로 교체됩니다.${slotMsg}\n\n현재 스케줄을 먼저 저장해두지 않으셨다면 취소 후 저장 먼저 해주세요.`)) return
     setBackupLoading(true)
     try {
       const { data: items, error } = await supabase
@@ -319,6 +320,13 @@ export default function ScheduleManagement() {
         } else {
           await supabase.from('schedules').insert(payload)
         }
+      }
+      // 교시수도 함께 적용 (예비스케줄에 저장된 slots_config가 있을 때만)
+      if (slotsConfig) {
+        const newConfig = { ...DEFAULT_SLOT_CONFIG, ...slotsConfig }
+        setSlotConfig(newConfig)
+        setTempConfig(newConfig)
+        localStorage.setItem('smc_slot_config', JSON.stringify(newConfig))
       }
       showToast(`"${setName}" 예비 스케줄을 불러왔어요 `)
       fetchAll()
@@ -1003,7 +1011,7 @@ export default function ScheduleManagement() {
                         }}
                       ><Edit2 size={13} /> 편집</button>
                       <button
-                        onClick={() => handleLoadBackup(bset.id, bset.name)}
+                        onClick={() => handleLoadBackup(bset.id, bset.name, bset.slots_config)}
                         disabled={backupLoading}
                         style={{
                           display:'flex', alignItems:'center', gap:'6px',
