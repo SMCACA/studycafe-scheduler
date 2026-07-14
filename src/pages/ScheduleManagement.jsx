@@ -269,7 +269,7 @@ export default function ScheduleManagement() {
     try {
       const { data: setData, error } = await supabase
         .from('schedule_sets')
-        .insert({ name: backupName.trim() })
+        .insert({ name: backupName.trim(), slots_config: slotConfig })
         .select().single()
       if (error) throw error
 
@@ -348,25 +348,40 @@ export default function ScheduleManagement() {
     setBackupEditName(bset ? bset.name : '')
     setBackupEditLoading(true)
     setIsBackupEditOpen(true)
-    setBackupDaySlots({ ...slotConfig })
+
+    // [버그 수정] 기존 백업의 slots_config가 있으면 그것을 사용, 없으면 현재 전역 설정 사용
+    if (bset?.slots_config) {
+      setBackupDaySlots({ ...DEFAULT_SLOT_CONFIG, ...bset.slots_config })
+    } else {
+      setBackupDaySlots({ ...slotConfig })
+    }
 
     let initialItems = {}
-    // 현재 재원생 기반으로 초기화 (빈 슬롯)
+    // 현재 재원생 기반으로 초기화
+    // [버그 수정] 기존에 mon_slots 등을 항상 [] 로 초기화하던 것을 현재 스케줄 슬롯으로 채움
     for (const stu of students) {
       const existing = schedules.find(s => s.student_id === stu.id)
       initialItems[stu.id] = {
         seat_number:     existing?.seat_number || stu.seat_number || '',
         membership_type: existing?.membership_type || '풀',
-        mon_slots: [], tue_slots: [], wed_slots: [],
-        thu_slots: [], fri_slots: [], sat_slots: [], sun_slots: [],
+        mon_slots: existing?.mon_slots || [],
+        tue_slots: existing?.tue_slots || [],
+        wed_slots: existing?.wed_slots || [],
+        thu_slots: existing?.thu_slots || [],
+        fri_slots: existing?.fri_slots || [],
+        sat_slots: existing?.sat_slots || [],
+        sun_slots: existing?.sun_slots || [],
       }
     }
 
     if (bset) {
       // 기존 예비 스케줄 아이템 불러오기
-      const { data: items } = await supabase
+      // [버그 수정] error도 함께 받아서 실패 시 토스트 표시
+      const { data: items, error: fetchErr } = await supabase
         .from('schedule_set_items').select('*').eq('set_id', bset.id)
-      if (items) {
+      if (fetchErr) {
+        showToast('예비 스케줄 데이터 로드 실패: ' + fetchErr.message, 'error')
+      } else if (items && items.length > 0) {
         for (const item of items) {
           initialItems[item.student_id] = {
             seat_number:     item.seat_number || '',
@@ -409,17 +424,21 @@ export default function ScheduleManagement() {
     try {
       let setId
       if (editingBackupSet) {
-        // 기존 세트 이름 업데이트
+        // 기존 세트 이름 + 교시수 업데이트
         const { error } = await supabase
-          .from('schedule_sets').update({ name: backupEditName.trim() }).eq('id', editingBackupSet.id)
+          .from('schedule_sets')
+          .update({ name: backupEditName.trim(), slots_config: backupDaySlots })
+          .eq('id', editingBackupSet.id)
         if (error) throw error
         setId = editingBackupSet.id
         // 기존 아이템 전부 삭제 후 재삽입
         await supabase.from('schedule_set_items').delete().eq('set_id', setId)
       } else {
-        // 새 세트 생성
+        // 새 세트 생성 (교시수 포함)
         const { data: newSet, error } = await supabase
-          .from('schedule_sets').insert({ name: backupEditName.trim() }).select().single()
+          .from('schedule_sets')
+          .insert({ name: backupEditName.trim(), slots_config: backupDaySlots })
+          .select().single()
         if (error) throw error
         setId = newSet.id
       }
