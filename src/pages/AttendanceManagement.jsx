@@ -514,3 +514,7 @@ export default function AttendanceManagement() {
             </div>
           </div>
         </div>
+      )}
+    </Layout>
+  )
+}
