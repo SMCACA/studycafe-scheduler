@@ -49,25 +49,28 @@ export default function App() {
         <Route path="/notifications/logs" element={
           <ProtectedRoute><NotificationLogs /></ProtectedRoute>
         } />
-        {/* ✅ [신규] 문구 저장 */}
+        {/* saved messages */}
         <Route path="/notifications/messages" element={
           <ProtectedRoute><SavedMessages /></ProtectedRoute>
         } />
 
-        {/* ✅ 상벌점 관리 */}
+        {/* points */}
         <Route path="/points" element={
           <ProtectedRoute><StudentPoints /></ProtectedRoute>
         } />
 
-        {/* ✅ 직원 근무표 */}
+        {/* staff */}
         <Route path="/staff" element={
           <ProtectedRoute><StaffManagement /></ProtectedRoute>
         } />
 
-        {/* ✅ [신규] 매뉴얼 저장함 */}
+        {/* manuals */}
         <Route path="/manuals" element={
           <ProtectedRoute><Manuals /></ProtectedRoute>
         } />
 
-        {/* ✅ [신규] 학사 캘린더 */}
-        <Route path="/cal
+        {/* calendar */}
+        <Route path="/calendar" element={
+          <ProtectedRoute><Calendar /></ProtectedRoute>
+        } />
+
