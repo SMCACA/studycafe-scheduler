@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import {
   CalendarDays, ChevronLeft, ChevronRight, Plus, X, Trash2, Edit2, Tag
 } from 'lucide-react'
+import { getHolidayName } from '../lib/koreanHolidays'
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -21,6 +22,14 @@ const CATEGORIES = [
 ]
 
 const getCat = (value) => CATEGORIES.find(c => c.value === value) || CATEGORIES[5]
+
+const EVENT_COLORS = [
+  '#EF4444', '#F97316', '#F59E0B', '#EAB308',
+  '#10B981', '#06B6D4', '#6366F1', '#8B5CF6',
+  '#EC4899', '#64748B',
+]
+
+const getEventColor = (evt) => evt.color || getCat(evt.category).color
 
 const DAYS_KR = ['일', '월', '화', '수', '목', '금', '토']
 const MONTHS_KR = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월']
@@ -157,6 +166,7 @@ export default function Calendar() {
       start_date:  form.start_date,
       end_date:    form.end_date,
       description: form.description.trim(),
+      color:       form.color || null,
     }
 
     let error
@@ -310,17 +320,37 @@ export default function Calendar() {
                     }}
                   >
                     {/* 날짜 숫자 */}
-                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '4px' }}>
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                        width: '26px', height: '26px', borderRadius: '50%',
-                        fontSize: '13px', fontWeight: isToday ? 800 : 500,
-                        background: isToday ? '#6366F1' : 'transparent',
-                        color: isToday ? '#fff' : dow === 0 ? '#EF4444' : dow === 6 ? '#3B82F6' : '#0F172A',
-                      }}>
-                        {cell.date.getDate()}
-                      </span>
-                    </div>
+                    {(() => {
+                      const holiday = getHolidayName(ds)
+                      const isHoliday = !!holiday
+                      const numColor = isToday ? '#fff' : (isHoliday || dow === 0) ? '#EF4444' : dow === 6 ? '#3B82F6' : '#0F172A'
+                      return (
+                        <div style={{ marginBottom: '2px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: holiday ? '2px' : '4px' }}>
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              width: '26px', height: '26px', borderRadius: '50%',
+                              fontSize: '13px', fontWeight: isToday ? 800 : 500,
+                              background: isToday ? '#6366F1' : 'transparent',
+                              color: numColor,
+                            }}>
+                              {cell.date.getDate()}
+                            </span>
+                          </div>
+                          {holiday && (
+                            <div style={{
+                              fontSize: '9px', fontWeight: 700, color: '#EF4444',
+                              background: '#FEF2F2', borderRadius: '3px',
+                              padding: '1px 4px', textAlign: 'center',
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                              marginBottom: '2px',
+                            }}>
+                              {holiday}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
 
                     {/* 이벤트 바 (최대 2개 표시, 나머지 +N) */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -334,7 +364,7 @@ export default function Calendar() {
                             key={evt.id}
                             title={evt.title}
                             style={{
-                              background: cat.color,
+                              background: getEventColor(evt),
                               color: '#fff',
                               fontSize: '10px', fontWeight: 600,
                               padding: '2px 5px',
@@ -376,9 +406,21 @@ export default function Calendar() {
                 boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                  <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
-                    {d.getFullYear()}년 {d.getMonth() + 1}월 {d.getDate()}일 ({DAYS_KR[dow]})
-                  </h3>
+                  <div>
+                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                      {d.getFullYear()}년 {d.getMonth() + 1}월 {d.getDate()}일 ({DAYS_KR[dow]})
+                    </h3>
+                    {getHolidayName(selectedDay) && (
+                      <span style={{
+                        display: 'inline-block', marginTop: '4px',
+                        fontSize: '12px', fontWeight: 700, color: '#EF4444',
+                        background: '#FEF2F2', padding: '2px 8px', borderRadius: '6px',
+                        border: '1px solid #FECACA',
+                      }}>
+                        {getHolidayName(selectedDay)}
+                      </span>
+                    )}
+                  </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button
                       onClick={() => openNew(selectedDay)}
@@ -403,15 +445,15 @@ export default function Calendar() {
                         <div key={evt.id} style={{
                           display: 'flex', alignItems: 'center', gap: '12px',
                           padding: '12px 16px', borderRadius: '12px',
-                          background: cat.bg, border: `1px solid ${cat.border}`,
+                          background: cat.bg, border: `1px solid ${evt.color || cat.border}`,
                         }}>
-                          <div style={{ width: '4px', height: '36px', borderRadius: '2px', background: cat.color, flexShrink: 0 }} />
+                          <div style={{ width: '4px', height: '36px', borderRadius: '2px', background: getEventColor(evt), flexShrink: 0 }} />
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <span style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A' }}>{evt.title}</span>
                               <span style={{
                                 padding: '2px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: 700,
-                                background: cat.color, color: '#fff',
+                                background: getEventColor(evt), color: '#fff',
                               }}>{cat.label}</span>
                             </div>
                             <p style={{ fontSize: '12px', color: '#64748B', margin: '3px 0 0' }}>
@@ -455,6 +497,34 @@ export default function Calendar() {
             </p>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+            {/* 이번 달 공휴일 */}
+            {(() => {
+              const monthHolidays = []
+              const daysInMonth = new Date(year, month + 1, 0).getDate()
+              for (let d = 1; d <= daysInMonth; d++) {
+                const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+                const name = getHolidayName(ds)
+                if (name) monthHolidays.push({ date: ds, name })
+              }
+              if (monthHolidays.length === 0) return null
+              return (
+                <div style={{ marginBottom: '12px', padding: '10px', background: '#FEF2F2', borderRadius: '10px', border: '1px solid #FECACA' }}>
+                  <p style={{ fontSize: '11px', fontWeight: 700, color: '#DC2626', marginBottom: '6px', letterSpacing: '0.04em' }}>
+                    이번 달 공휴일 ({monthHolidays.length}일)
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {monthHolidays.map(h => (
+                      <div key={h.date} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '11px', color: '#EF4444', fontWeight: 700, minWidth: '36px' }}>
+                          {h.date.slice(5).replace('-', '/')}
+                        </span>
+                        <span style={{ fontSize: '11px', color: '#7F1D1D' }}>{h.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
             {loading ? (
               <p style={{ textAlign: 'center', color: '#94A3B8', fontSize: '13px', padding: '40px 0' }}>불러오는 중...</p>
             ) : monthEvents.length === 0 ? (
@@ -473,14 +543,14 @@ export default function Calendar() {
                       onClick={() => { openEdit(evt) }}
                       style={{
                         padding: '12px 14px', borderRadius: '12px', cursor: 'pointer',
-                        background: '#fff', border: `1.5px solid ${cat.border}`,
+                        background: '#fff', border: `1.5px solid ${evt.color || cat.border}`,
                         transition: 'box-shadow 0.15s',
                       }}
                       onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)' }}
                       onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none' }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: cat.color, flexShrink: 0 }} />
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: getEventColor(evt), flexShrink: 0 }} />
                         <span style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {evt.title}
                         </span>
@@ -564,6 +634,49 @@ export default function Calendar() {
                     )
                   })}
                 </div>
+              </div>
+
+              {/* 표시 색상 선택 */}
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '8px' }}>
+                  표시 색상 (선택) — 카테고리와 별도로 색상을 지정해 구분하세요
+                </label>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  {EVENT_COLORS.map(c => {
+                    const active = form.color === c
+                    return (
+                      <button key={c} type="button"
+                        onClick={() => setForm(f => ({ ...f, color: f.color === c ? '' : c }))}
+                        style={{
+                          width: '32px', height: '32px', borderRadius: '50%',
+                          background: c, cursor: 'pointer',
+                          border: active ? '3px solid #0F172A' : '2px solid #fff',
+                          boxShadow: active
+                            ? `0 0 0 2px ${c}, 0 3px 10px ${c}80`
+                            : '0 1px 4px rgba(0,0,0,0.2)',
+                          transition: 'all 0.12s',
+                          transform: active ? 'scale(1.2)' : 'scale(1)',
+                        }}
+                        title={c}
+                      />
+                    )
+                  })}
+                  {form.color && (
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, color: '' }))}
+                      style={{
+                        padding: '5px 12px', borderRadius: '8px',
+                        border: '1px solid #E2E8F0', background: '#F8FAFC',
+                        color: '#64748B', fontSize: '11px', fontWeight: 600, cursor: 'pointer',
+                      }}>초기화</button>
+                  )}
+                </div>
+                {form.color && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
+                    <div style={{ width: '14px', height: '14px', borderRadius: '4px', background: form.color, flexShrink: 0 }} />
+                    <span style={{ fontSize: '11px', color: '#64748B' }}>이 색상으로 캘린더에 표시됩니다</span>
+                  </div>
+                )}
               </div>
 
               {/* 날짜 */}

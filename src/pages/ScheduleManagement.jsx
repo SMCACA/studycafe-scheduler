@@ -89,12 +89,16 @@ export default function ScheduleManagement() {
   const [backupEditName,      setBackupEditName]      = useState('')
   const [backupEditItems,     setBackupEditItems]     = useState({})     // { studentId: { membership_type, mon_slots, ... } }
   const [backupEditLoading,   setBackupEditLoading]   = useState(false)
+  const [backupDaySlots,      setBackupDaySlots]      = useState({ ...DEFAULT_SLOT_CONFIG })
   // 좌석 정렬 상태
   const [sortField, setSortField] = useState('name')   // 'name' | 'seat'
   const [sortDir,   setSortDir]   = useState('asc')
 
   const dayConfig = useMemo(() =>
     DAY_KEYS.map(d => ({ ...d, slots: slotConfig[d.cfgKey] || 5 })), [slotConfig])
+
+  const backupDayConfig = useMemo(() =>
+    DAY_KEYS.map(d => ({ ...d, slots: backupDaySlots[d.cfgKey] || 5 })), [backupDaySlots])
 
   const totalSlots = useMemo(() =>
     dayConfig.reduce((sum, d) => sum + d.slots, 0), [dayConfig])
@@ -325,9 +329,17 @@ export default function ScheduleManagement() {
   // -- 예비 스케줄: 삭제 --
   const handleDeleteBackup = async (setId, setName) => {
     if (!window.confirm(`"${setName}" 예비 스케줄을 삭제할까요?`)) return
-    const { error } = await supabase.from('schedule_sets').delete().eq('id', setId)
-    if (error) showToast('삭제 실패: ' + error.message, 'error')
-    else { showToast(`"${setName}" 삭제 완료`); fetchAll() }
+    setBackupLoading(true)
+    try {
+      // 아이템 먼저 삭제 후 세트 삭제 (순서 중요)
+      const { error: ie } = await supabase.from('schedule_set_items').delete().eq('set_id', setId)
+      if (ie) throw ie
+      const { error: se } = await supabase.from('schedule_sets').delete().eq('id', setId)
+      if (se) throw se
+      showToast(`"${setName}" 삭제 완료`)
+      fetchAll()
+    } catch (err) { showToast('삭제 실패: ' + err.message, 'error') }
+    finally { setBackupLoading(false) }
   }
 
   // -- 예비 스케줄: 직접 편집 열기 --
@@ -336,6 +348,7 @@ export default function ScheduleManagement() {
     setBackupEditName(bset ? bset.name : '')
     setBackupEditLoading(true)
     setIsBackupEditOpen(true)
+    setBackupDaySlots({ ...slotConfig })
 
     let initialItems = {}
     // 현재 재원생 기반으로 초기화 (빈 슬롯)
@@ -1525,18 +1538,63 @@ export default function ScheduleManagement() {
                       borderBottom:'1px solid rgba(255,255,255,0.08)',
                       width:'100px', minWidth:'100px',
                     }}>재원구분</th>
-                    {dayConfig.map(day => (
+                    {backupDayConfig.map(day => (
                       <th key={day.key} style={{
                         background:'#1E293B',
                         fontSize:'11px', fontWeight:700,
                         padding:'10px 16px', textAlign:'center', whiteSpace:'nowrap',
                         borderRight:'1px solid rgba(255,255,255,0.05)',
-                        borderBottom:'1px solid rgba(255,255,255,0.08)',
+                        borderBottom:'1px solid rgba(255,255,255,0.04)',
                         minWidth:'130px',
                         color: day.color,
                       }}>
                         {day.label}요일
-                        <span style={{ color:'#475569', fontWeight:400, marginLeft:'4px' }}>({day.slots}교시)</span>
+                      </th>
+                    ))}
+                  </tr>
+                  {/* 교시 수 설정 행 */}
+                  <tr>
+                    <th style={{
+                      position:'sticky', left:0, zIndex:30,
+                      background:'#162032', padding:'6px 20px', textAlign:'left',
+                      borderRight:'1px solid rgba(255,255,255,0.08)',
+                      borderBottom:'1px solid rgba(255,255,255,0.1)',
+                    }}>
+                      <span style={{ fontSize:'10px', color:'#334155', fontWeight:700, letterSpacing:'0.05em' }}>교시 수</span>
+                    </th>
+                    <th style={{
+                      background:'#162032',
+                      borderRight:'1px solid rgba(255,255,255,0.08)',
+                      borderBottom:'1px solid rgba(255,255,255,0.1)',
+                    }}></th>
+                    {backupDayConfig.map(day => (
+                      <th key={day.key+'_ctrl'} style={{
+                        background:'#162032',
+                        padding:'5px 12px', textAlign:'center',
+                        borderRight:'1px solid rgba(255,255,255,0.04)',
+                        borderBottom:'1px solid rgba(255,255,255,0.1)',
+                      }}>
+                        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'6px' }}>
+                          <button
+                            onClick={() => setBackupDaySlots(p => ({ ...p, [day.cfgKey]: Math.max(1, (p[day.cfgKey]||5)-1) }))}
+                            style={{
+                              width:'20px', height:'20px', borderRadius:'4px', border:'none',
+                              background:'rgba(255,255,255,0.08)', color:'#94A3B8',
+                              fontSize:'14px', cursor:'pointer', lineHeight:1,
+                              display:'flex', alignItems:'center', justifyContent:'center',
+                            }}>-</button>
+                          <span style={{ fontSize:'13px', fontWeight:700, color:day.color, minWidth:'20px', textAlign:'center' }}>
+                            {day.slots}
+                          </span>
+                          <button
+                            onClick={() => setBackupDaySlots(p => ({ ...p, [day.cfgKey]: Math.min(20, (p[day.cfgKey]||5)+1) }))}
+                            style={{
+                              width:'20px', height:'20px', borderRadius:'4px', border:'none',
+                              background:'rgba(255,255,255,0.08)', color:'#94A3B8',
+                              fontSize:'14px', cursor:'pointer', lineHeight:1,
+                              display:'flex', alignItems:'center', justifyContent:'center',
+                            }}>+</button>
+                        </div>
                       </th>
                     ))}
                   </tr>
@@ -1614,7 +1672,7 @@ export default function ScheduleManagement() {
                         </td>
 
                         {/* 요일별 교시 버튼 */}
-                        {dayConfig.map(day => {
+                        {backupDayConfig.map(day => {
                           const avail = isDayAvailable(memType, day.type)
                           const cur   = item[day.key] || []
                           const allSel = cur.length === day.slots && day.slots > 0
