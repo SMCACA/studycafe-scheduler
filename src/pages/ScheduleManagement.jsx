@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import Layout from '../components/Layout'
 import { createClient } from '@supabase/supabase-js'
-import { X, Trash2, Settings, CalendarDays, Users, Archive, Clock, ChevronUp, ChevronDown } from 'lucide-react'
+import { X, Trash2, Settings, CalendarDays, Users, Archive, Clock, ChevronUp, ChevronDown, Edit2, Plus, Save } from 'lucide-react'
 import { loadTimeConfig, saveTimeConfig, DEFAULT_WEEKDAY_CONFIG, DEFAULT_WEEKEND_CONFIG } from '../lib/timeSlotConfig'
 
 const supabase = createClient(
@@ -83,6 +83,12 @@ export default function ScheduleManagement() {
   const [backupLoading,       setBackupLoading]       = useState(false)
   const [backupName,          setBackupName]          = useState('')
   const [showBackupNameInput, setShowBackupNameInput] = useState(false)
+  // ── 예비 스케줄 직접 편집 상태 ────────────────────────
+  const [isBackupEditOpen,    setIsBackupEditOpen]    = useState(false)
+  const [editingBackupSet,    setEditingBackupSet]    = useState(null)   // null = 새 작성
+  const [backupEditName,      setBackupEditName]      = useState('')
+  const [backupEditItems,     setBackupEditItems]     = useState({})     // { studentId: { membership_type, mon_slots, ... } }
+  const [backupEditLoading,   setBackupEditLoading]   = useState(false)
   // ✅ 좌석 정렬 상태
   const [sortField, setSortField] = useState('name')   // 'name' | 'seat'
   const [sortDir,   setSortDir]   = useState('asc')
@@ -322,6 +328,113 @@ export default function ScheduleManagement() {
     const { error } = await supabase.from('schedule_sets').delete().eq('id', setId)
     if (error) showToast('삭제 실패: ' + error.message, 'error')
     else { showToast(`"${setName}" 삭제 완료`); fetchAll() }
+  }
+
+  // ── 예비 스케줄: 직접 편집 열기 ────────────────────────
+  const handleOpenBackupEdit = async (bset) => {
+    setEditingBackupSet(bset)
+    setBackupEditName(bset ? bset.name : '')
+    setBackupEditLoading(true)
+    setIsBackupEditOpen(true)
+
+    let initialItems = {}
+    // 현재 재원생 기반으로 초기화 (빈 슬롯)
+    for (const stu of students) {
+      const existing = schedules.find(s => s.student_id === stu.id)
+      initialItems[stu.id] = {
+        seat_number:     existing?.seat_number || stu.seat_number || '',
+        membership_type: existing?.membership_type || '풀',
+        mon_slots: [], tue_slots: [], wed_slots: [],
+        thu_slots: [], fri_slots: [], sat_slots: [], sun_slots: [],
+      }
+    }
+
+    if (bset) {
+      // 기존 예비 스케줄 아이템 불러오기
+      const { data: items } = await supabase
+        .from('schedule_set_items').select('*').eq('set_id', bset.id)
+      if (items) {
+        for (const item of items) {
+          initialItems[item.student_id] = {
+            seat_number:     item.seat_number || '',
+            membership_type: item.membership_type || '풀',
+            mon_slots: item.mon_slots || [], tue_slots: item.tue_slots || [],
+            wed_slots: item.wed_slots || [], thu_slots: item.thu_slots || [],
+            fri_slots: item.fri_slots || [], sat_slots: item.sat_slots || [],
+            sun_slots: item.sun_slots || [],
+          }
+        }
+      }
+    }
+
+    setBackupEditItems(initialItems)
+    setBackupEditLoading(false)
+  }
+
+  // ── 예비 스케줄: 직접 편집 - 슬롯 토글 ────────────────
+  const toggleBackupSlot = (studentId, dayKey, n) => {
+    setBackupEditItems(prev => {
+      const cur = prev[studentId]?.[dayKey] || []
+      const next = cur.includes(n) ? cur.filter(s => s !== n) : [...cur, n].sort((a,b) => a-b)
+      return { ...prev, [studentId]: { ...(prev[studentId] || {}), [dayKey]: next } }
+    })
+  }
+
+  const toggleBackupAllDay = (studentId, dayKey, totalSlots) => {
+    setBackupEditItems(prev => {
+      const cur = prev[studentId]?.[dayKey] || []
+      const all = Array.from({ length: totalSlots }, (_, i) => i + 1)
+      const next = cur.length === totalSlots ? [] : all
+      return { ...prev, [studentId]: { ...(prev[studentId] || {}), [dayKey]: next } }
+    })
+  }
+
+  // ── 예비 스케줄: 직접 편집 저장 ────────────────────────
+  const handleSaveBackupEdit = async () => {
+    if (!backupEditName.trim()) { showToast('예비 스케줄 이름을 입력해주세요', 'error'); return }
+    setBackupEditLoading(true)
+    try {
+      let setId
+      if (editingBackupSet) {
+        // 기존 세트 이름 업데이트
+        const { error } = await supabase
+          .from('schedule_sets').update({ name: backupEditName.trim() }).eq('id', editingBackupSet.id)
+        if (error) throw error
+        setId = editingBackupSet.id
+        // 기존 아이템 전부 삭제 후 재삽입
+        await supabase.from('schedule_set_items').delete().eq('set_id', setId)
+      } else {
+        // 새 세트 생성
+        const { data: newSet, error } = await supabase
+          .from('schedule_sets').insert({ name: backupEditName.trim() }).select().single()
+        if (error) throw error
+        setId = newSet.id
+      }
+
+      const items = students.map(stu => {
+        const item = backupEditItems[stu.id] || {}
+        return {
+          set_id:          setId,
+          student_id:      stu.id,
+          seat_number:     item.seat_number || stu.seat_number || null,
+          membership_type: item.membership_type || '풀',
+          mon_slots: item.mon_slots || [], tue_slots: item.tue_slots || [],
+          wed_slots: item.wed_slots || [], thu_slots: item.thu_slots || [],
+          fri_slots: item.fri_slots || [], sat_slots: item.sat_slots || [],
+          sun_slots: item.sun_slots || [],
+        }
+      })
+
+      if (items.length > 0) {
+        const { error: ie } = await supabase.from('schedule_set_items').insert(items)
+        if (ie) throw ie
+      }
+
+      showToast(`"${backupEditName}" 예비 스케줄 저장 완료 💾`)
+      setIsBackupEditOpen(false)
+      fetchAll()
+    } catch (err) { showToast(`저장 실패: ${err.message}`, 'error') }
+    finally { setBackupEditLoading(false) }
   }
 
   const cellBorder = '1px solid #E2E8F0'
@@ -732,56 +845,84 @@ export default function ScheduleManagement() {
         ════════════════════════════════════════ */}
         {activeTab === 'backup' && (
           <div>
-            {/* 저장 박스 */}
-            <div style={{
-              background:'#fff', borderRadius:'16px', border:'1px solid #E2E8F0',
-              padding:'24px', marginBottom:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.04)',
-            }}>
-              <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'12px' }}>
-                <Archive size={18} style={{ color:'#6366F1' }} />
-                <h3 style={{ fontSize:'15px', fontWeight:700, color:'#0F172A', margin:0 }}>현재 스케줄을 예비로 저장</h3>
-              </div>
-              <p style={{ fontSize:'13px', color:'#64748B', marginBottom:'16px', lineHeight:1.7 }}>
-                현재 등록된 <strong style={{ color:'#0F172A' }}>모든 학생의 스케줄</strong>을 이름 붙여 저장합니다.<br />
-                나중에 불러오기 버튼으로 현재 스케줄과 교체할 수 있어요.
-              </p>
-              {showBackupNameInput ? (
-                <div style={{ display:'flex', gap:'10px', alignItems:'center' }}>
-                  <input
-                    value={backupName}
-                    onChange={e => setBackupName(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') handleSaveBackup() }}
-                    placeholder="예) 2025년 여름방학 스케줄"
-                    autoFocus
-                    style={{
-                      flex:1, padding:'10px 14px', borderRadius:'10px',
-                      border:'1.5px solid #6366F1', outline:'none', fontSize:'13px',
-                      boxShadow:'0 0 0 3px rgba(99,102,241,0.1)',
-                    }}
-                  />
-                  <button onClick={handleSaveBackup} disabled={backupLoading} style={{
-                    padding:'10px 20px', borderRadius:'10px', border:'none',
-                    background:'linear-gradient(135deg,#6366F1,#7C3AED)',
-                    color:'#fff', fontSize:'13px', fontWeight:700, cursor:'pointer',
-                    opacity: backupLoading ? 0.6 : 1,
-                  }}>
-                    {backupLoading ? '저장 중…' : '저장'}
-                  </button>
-                  <button onClick={() => { setShowBackupNameInput(false); setBackupName('') }} style={{
-                    padding:'10px 14px', borderRadius:'10px', border:'1.5px solid #E2E8F0',
-                    background:'#fff', fontSize:'13px', color:'#64748B', cursor:'pointer',
-                  }}>취소</button>
+            {/* 저장 방법 선택 카드 2개 */}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'14px', marginBottom:'20px' }}>
+              {/* 방법 1: 현재 스케줄 그대로 저장 */}
+              <div style={{
+                background:'#fff', borderRadius:'16px', border:'1px solid #E2E8F0',
+                padding:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.04)',
+              }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'10px' }}>
+                  <Archive size={18} style={{ color:'#6366F1' }} />
+                  <h3 style={{ fontSize:'14px', fontWeight:700, color:'#0F172A', margin:0 }}>현재 스케줄 그대로 저장</h3>
                 </div>
-              ) : (
-                <button onClick={() => setShowBackupNameInput(true)} style={{
-                  display:'flex', alignItems:'center', gap:'8px',
-                  padding:'10px 20px', borderRadius:'12px',
-                  border:'1.5px solid #6366F1', background:'#EEF2FF',
-                  color:'#6366F1', fontSize:'13px', fontWeight:700, cursor:'pointer',
-                }}>
-                  + 현재 스케줄 저장하기
+                <p style={{ fontSize:'12px', color:'#64748B', marginBottom:'14px', lineHeight:1.6 }}>
+                  지금 등록된 모든 학생 스케줄을 스냅샷으로 저장합니다.
+                </p>
+                {showBackupNameInput ? (
+                  <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
+                    <input
+                      value={backupName}
+                      onChange={e => setBackupName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleSaveBackup() }}
+                      placeholder="예) 2025년 여름방학 스케줄"
+                      autoFocus
+                      style={{
+                        width:'100%', padding:'9px 12px', borderRadius:'10px', boxSizing:'border-box',
+                        border:'1.5px solid #6366F1', outline:'none', fontSize:'13px',
+                        boxShadow:'0 0 0 3px rgba(99,102,241,0.1)',
+                      }}
+                    />
+                    <div style={{ display:'flex', gap:'6px' }}>
+                      <button onClick={handleSaveBackup} disabled={backupLoading} style={{
+                        flex:1, padding:'9px', borderRadius:'9px', border:'none',
+                        background:'linear-gradient(135deg,#6366F1,#7C3AED)',
+                        color:'#fff', fontSize:'12px', fontWeight:700, cursor:'pointer',
+                        opacity: backupLoading ? 0.6 : 1,
+                      }}>{backupLoading ? '저장 중…' : '저장'}</button>
+                      <button onClick={() => { setShowBackupNameInput(false); setBackupName('') }} style={{
+                        padding:'9px 12px', borderRadius:'9px', border:'1.5px solid #E2E8F0',
+                        background:'#fff', fontSize:'12px', color:'#64748B', cursor:'pointer',
+                      }}>취소</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowBackupNameInput(true)} style={{
+                    display:'flex', alignItems:'center', gap:'8px',
+                    padding:'9px 16px', borderRadius:'10px', width:'100%', justifyContent:'center',
+                    border:'1.5px solid #6366F1', background:'#EEF2FF',
+                    color:'#6366F1', fontSize:'13px', fontWeight:700, cursor:'pointer',
+                  }}>
+                    <Archive size={14} /> 현재 스케줄 저장
+                  </button>
+                )}
+              </div>
+
+              {/* 방법 2: 새로 직접 작성 */}
+              <div style={{
+                background:'#fff', borderRadius:'16px', border:'2px dashed #C7D2FE',
+                padding:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.04)',
+              }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'10px' }}>
+                  <Edit2 size={18} style={{ color:'#7C3AED' }} />
+                  <h3 style={{ fontSize:'14px', fontWeight:700, color:'#0F172A', margin:0 }}>요일·교시별 직접 작성</h3>
+                </div>
+                <p style={{ fontSize:'12px', color:'#64748B', marginBottom:'14px', lineHeight:1.6 }}>
+                  재원생별로 요일·교시를 <strong style={{ color:'#7C3AED' }}>자유롭게 설정</strong>해서 새 예비 스케줄을 만듭니다.
+                </p>
+                <button
+                  onClick={() => handleOpenBackupEdit(null)}
+                  style={{
+                    display:'flex', alignItems:'center', gap:'8px',
+                    padding:'9px 16px', borderRadius:'10px', width:'100%', justifyContent:'center',
+                    border:'none', background:'linear-gradient(135deg,#7C3AED,#6366F1)',
+                    color:'#fff', fontSize:'13px', fontWeight:700, cursor:'pointer',
+                    boxShadow:'0 4px 12px rgba(124,58,237,0.3)',
+                  }}
+                >
+                  <Plus size={14} /> 직접 작성하기
                 </button>
-              )}
+              </div>
             </div>
 
             {/* 저장된 목록 */}
@@ -818,11 +959,23 @@ export default function ScheduleManagement() {
                     </div>
                     <div style={{ display:'flex', gap:'8px' }}>
                       <button
+                        onClick={() => handleOpenBackupEdit(bset)}
+                        disabled={backupLoading}
+                        style={{
+                          display:'flex', alignItems:'center', gap:'6px',
+                          padding:'8px 14px', borderRadius:'10px',
+                          border:'1.5px solid #C7D2FE', background:'#EEF2FF',
+                          color:'#6366F1', fontSize:'12px', fontWeight:700,
+                          cursor: backupLoading ? 'not-allowed' : 'pointer',
+                          opacity: backupLoading ? 0.6 : 1,
+                        }}
+                      ><Edit2 size={13} /> 편집</button>
+                      <button
                         onClick={() => handleLoadBackup(bset.id, bset.name)}
                         disabled={backupLoading}
                         style={{
                           display:'flex', alignItems:'center', gap:'6px',
-                          padding:'8px 16px', borderRadius:'10px',
+                          padding:'8px 14px', borderRadius:'10px',
                           border:'1.5px solid #059669', background:'#ECFDF5',
                           color:'#059669', fontSize:'12px', fontWeight:700,
                           cursor: backupLoading ? 'not-allowed' : 'pointer',
@@ -834,7 +987,7 @@ export default function ScheduleManagement() {
                         disabled={backupLoading}
                         style={{
                           display:'flex', alignItems:'center', gap:'6px',
-                          padding:'8px 16px', borderRadius:'10px',
+                          padding:'8px 14px', borderRadius:'10px',
                           border:'1.5px solid #FECACA', background:'#FEF2F2',
                           color:'#EF4444', fontSize:'12px', fontWeight:700,
                           cursor: backupLoading ? 'not-allowed' : 'pointer',
@@ -1269,6 +1422,199 @@ export default function ScheduleManagement() {
               }}>저장</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════
+          모달: 예비 스케줄 직접 편집 (전체화면)
+      ═══════════════════════════════════════════ */}
+      {isBackupEditOpen && (
+        <div style={{
+          position:'fixed', inset:0, background:'#F8FAFC',
+          display:'flex', flexDirection:'column', zIndex:60, overflow:'hidden',
+        }}>
+          {/* 상단 헤더 */}
+          <div style={{
+            background:'#fff', borderBottom:'1px solid #E2E8F0',
+            padding:'16px 24px', display:'flex', alignItems:'center', gap:'16px', flexShrink:0,
+            boxShadow:'0 2px 8px rgba(0,0,0,0.05)',
+          }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'12px', flex:1, minWidth:0 }}>
+              <div style={{ width:'38px', height:'38px', borderRadius:'10px', background:'linear-gradient(135deg,#7C3AED,#6366F1)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <Edit2 size={18} style={{ color:'#fff' }} />
+              </div>
+              <div style={{ minWidth:0 }}>
+                <p style={{ fontSize:'11px', color:'#94A3B8', margin:0, fontWeight:600 }}>예비 스케줄 직접 편집</p>
+                <input
+                  value={backupEditName}
+                  onChange={e => setBackupEditName(e.target.value)}
+                  placeholder="예비 스케줄 이름 입력 (필수)"
+                  style={{
+                    fontSize:'17px', fontWeight:700, color:'#0F172A',
+                    border:'none', outline:'none', background:'transparent',
+                    width:'340px', padding:0,
+                  }}
+                />
+              </div>
+            </div>
+            <p style={{ fontSize:'12px', color:'#94A3B8', margin:0, flexShrink:0 }}>
+              재원생 {students.length}명
+            </p>
+            <div style={{ display:'flex', gap:'8px', flexShrink:0 }}>
+              <button
+                onClick={() => setIsBackupEditOpen(false)}
+                style={{
+                  padding:'9px 18px', borderRadius:'10px', border:'1.5px solid #E2E8F0',
+                  background:'#fff', color:'#64748B', fontSize:'13px', fontWeight:600, cursor:'pointer',
+                }}
+              >취소</button>
+              <button
+                onClick={handleSaveBackupEdit}
+                disabled={backupEditLoading}
+                style={{
+                  display:'flex', alignItems:'center', gap:'8px',
+                  padding:'9px 20px', borderRadius:'10px', border:'none',
+                  background:'linear-gradient(135deg,#7C3AED,#6366F1)',
+                  color:'#fff', fontSize:'13px', fontWeight:700, cursor:'pointer',
+                  opacity: backupEditLoading ? 0.6 : 1,
+                  boxShadow:'0 4px 12px rgba(124,58,237,0.3)',
+                }}
+              >
+                <Save size={14} /> {backupEditLoading ? '저장 중…' : '저장 완료'}
+              </button>
+            </div>
+          </div>
+
+          {/* 안내 배너 */}
+          <div style={{ padding:'10px 24px', background:'#EEF2FF', borderBottom:'1px solid #C7D2FE', flexShrink:0 }}>
+            <p style={{ fontSize:'12px', color:'#4338CA', margin:0 }}>
+              💡 재원생별로 요일·교시를 선택하세요. 저장 후 "불러오기"로 현재 스케줄에 적용할 수 있어요.
+            </p>
+          </div>
+
+          {/* 학생 목록 */}
+          {backupEditLoading ? (
+            <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'#94A3B8', fontSize:'14px' }}>
+              불러오는 중...
+            </div>
+          ) : (
+            <div style={{ flex:1, overflowY:'auto', padding:'16px 24px', display:'flex', flexDirection:'column', gap:'12px' }}>
+              {students.length === 0 ? (
+                <div style={{ textAlign:'center', padding:'80px', color:'#94A3B8' }}>
+                  <p style={{ fontSize:'32px', marginBottom:'8px' }}>👤</p>
+                  <p>등록된 재원생이 없어요</p>
+                </div>
+              ) : students.map(stu => {
+                const item = backupEditItems[stu.id] || {}
+                const memType = item.membership_type || '풀'
+                return (
+                  <div key={stu.id} style={{
+                    background:'#fff', borderRadius:'16px', border:'1px solid #E2E8F0',
+                    boxShadow:'0 1px 4px rgba(0,0,0,0.04)', overflow:'hidden',
+                  }}>
+                    {/* 학생 헤더 */}
+                    <div style={{
+                      display:'flex', alignItems:'center', gap:'14px',
+                      padding:'13px 20px', background:'#F8FAFF', borderBottom:'1px solid #E2E8F0',
+                    }}>
+                      <div style={{
+                        width:'34px', height:'34px', borderRadius:'9px', flexShrink:0,
+                        background:'linear-gradient(135deg,#6366F1,#7C3AED)',
+                        display:'flex', alignItems:'center', justifyContent:'center',
+                        color:'#fff', fontSize:'13px', fontWeight:700,
+                      }}>{stu.name.slice(0,1)}</div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                          <span style={{ fontSize:'15px', fontWeight:700, color:'#0F172A' }}>{stu.name}</span>
+                          {stu.grade && (
+                            <span style={{
+                              padding:'2px 8px', borderRadius:'999px', fontSize:'11px', fontWeight:700,
+                              background: stu.grade.startsWith('고') ? '#EEF2FF' : '#ECFDF5',
+                              color:      stu.grade.startsWith('고') ? '#4F46E5' : '#059669',
+                            }}>{stu.grade}</span>
+                          )}
+                        </div>
+                        <p style={{ fontSize:'11px', color:'#94A3B8', margin:'2px 0 0' }}>
+                          좌석: {item.seat_number || stu.seat_number || '미지정'}
+                        </p>
+                      </div>
+                      {/* 재원 구분 */}
+                      <div style={{ display:'flex', gap:'4px', flexShrink:0 }}>
+                        {['평일','주말','풀'].map(type => (
+                          <button key={type} type="button"
+                            onClick={() => setBackupEditItems(prev => ({
+                              ...prev,
+                              [stu.id]: { ...(prev[stu.id] || {}), membership_type: type }
+                            }))}
+                            style={{
+                              padding:'5px 12px', borderRadius:'8px', fontSize:'12px', fontWeight:700, cursor:'pointer',
+                              border:'none', transition:'all 0.12s',
+                              background: memType === type ? '#6366F1' : '#F1F5F9',
+                              color:      memType === type ? '#fff'    : '#64748B',
+                            }}
+                          >{type}</button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* 요일별 교시 선택 */}
+                    <div style={{ padding:'14px 20px', display:'flex', flexDirection:'column', gap:'8px' }}>
+                      {dayConfig.map(day => {
+                        const avail = isDayAvailable(memType, day.type)
+                        const cur   = item[day.key] || []
+                        return (
+                          <div key={day.key} style={{
+                            display:'flex', alignItems:'center', gap:'12px',
+                            opacity: avail ? 1 : 0.3,
+                          }}>
+                            <div style={{ width:'84px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                              <span style={{ fontSize:'13px', fontWeight:700, color: avail ? day.color : '#94A3B8' }}>
+                                {day.label}요일
+                              </span>
+                              {avail && (
+                                <button type="button"
+                                  onClick={() => toggleBackupAllDay(stu.id, day.key, day.slots)}
+                                  style={{ fontSize:'10px', color:'#94A3B8', background:'none', border:'none', cursor:'pointer', fontWeight:600, padding:0 }}
+                                >
+                                  {cur.length === day.slots ? '해제' : '전체'}
+                                </button>
+                              )}
+                            </div>
+                            <div style={{ display:'flex', gap:'4px', flexWrap:'wrap' }}>
+                              {Array.from({ length: day.slots }, (_, i) => {
+                                const n = i + 1
+                                const checked = cur.includes(n)
+                                return (
+                                  <button key={n} type="button"
+                                    onClick={() => avail && toggleBackupSlot(stu.id, day.key, n)}
+                                    disabled={!avail}
+                                    style={{
+                                      width:'32px', height:'32px', borderRadius:'8px',
+                                      border: checked ? 'none' : '1.5px solid #E2E8F0',
+                                      cursor: avail ? 'pointer' : 'not-allowed',
+                                      fontSize:'12px', fontWeight:700, transition:'all 0.1s',
+                                      background: checked ? day.color : '#F8FAFC',
+                                      color:      checked ? '#fff'    : '#94A3B8',
+                                      boxShadow: checked ? `0 2px 6px ${day.color}4D` : 'none',
+                                    }}
+                                  >{n}</button>
+                                )
+                              })}
+                            </div>
+                            {avail && cur.length > 0 && (
+                              <span style={{ fontSize:'11px', color:day.color, fontWeight:700, flexShrink:0 }}>
+                                {cur.length}교시
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 

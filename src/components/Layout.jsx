@@ -9,6 +9,8 @@ import {
   Sparkles,          // ✅ 응원문구 아이콘
   BarChart3,         // ✅ [신규] 알림톡 발송 결과 아이콘
   Archive,           // ✅ [신규] 매뉴얼 저장함 아이콘
+  BookMarked,        // ✅ [신규] 문구 저장 아이콘
+  CalendarRange,     // ✅ [신규] 학사 캘린더 아이콘
 } from 'lucide-react'
 
 const SIDEBAR_W = 400
@@ -28,13 +30,15 @@ const menuItems = [
   {
     label: '알림톡', path: '/notifications', icon: MessageSquare,
     children: [
-      { label: '스케줄 알림톡', path: '/notifications/schedule', icon: Eye  },
-      { label: '상벌점 알림톡', path: '/notifications/rewards',  icon: Star },
-      { label: '발송 결과 확인', path: '/notifications/logs',    icon: BarChart3 }, // ✅ 신규
+      { label: '스케줄 알림톡', path: '/notifications/schedule', icon: Eye        },
+      { label: '상벌점 알림톡', path: '/notifications/rewards',  icon: Star       },
+      { label: '발송 결과 확인', path: '/notifications/logs',    icon: BarChart3  },
+      { label: '문구 저장',     path: '/notifications/messages', icon: BookMarked }, // ✅ [신규]
     ],
   },
-  { label: '직원 근무표', path: '/staff', icon: UserCheck }, // ✅ 신규
-  { label: '매뉴얼 저장함', path: '/manuals', icon: Archive }, // ✅ [신규]
+  { label: '학사 캘린더', path: '/calendar', icon: CalendarRange }, // ✅ [신규]
+  { label: '직원 근무표', path: '/staff', icon: UserCheck },
+  { label: '매뉴얼 저장함', path: '/manuals', icon: Archive },
 ]
 
 function getPageTitle(p) {
@@ -47,6 +51,8 @@ function getPageTitle(p) {
     '/notifications/schedule': '스케줄 알림톡',
     '/notifications/rewards':  '상벌점 알림톡',
     '/notifications/logs':     '발송 결과 확인',
+    '/notifications/messages': '문구 저장',
+    '/calendar':               '학사 캘린더',
     '/staff':                  '직원 근무표',
     '/manuals':                '매뉴얼 저장함',
   }
@@ -260,18 +266,4 @@ export default function Layout({ children }) {
                 transition:'all 0.15s',
               }}
               onMouseEnter={e => { e.currentTarget.style.color='#FCA5A5'; e.currentTarget.style.background='rgba(239,68,68,0.1)' }}
-              onMouseLeave={e => { e.currentTarget.style.color='#475569'; e.currentTarget.style.background='transparent' }}
-            >
-              <LogOut size={18} strokeWidth={1.8} />
-              <span>로그아웃</span>
-            </button>
-          </div>
-        </aside>
-
-        <main style={{ flex:1, overflow:'auto', background:'#F8FAFC' }}>
-          {children}
-        </main>
-      </div>
-    </div>
-  )
-}
+              onMouseLeave={e => { e.curr

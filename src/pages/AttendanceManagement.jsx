@@ -19,7 +19,7 @@ const formatDateKr = (d) => {
 }
 
 const ATTENDANCE_OPTIONS = ['등원예정','등원']
-const ABSENCE_OPTIONS    = ['-','결석','하원','학원','식사']
+const ABSENCE_OPTIONS    = ['-','결석','하원','학원','식사','자리비움']
 
 const cell = { border:'1px solid #E2E8F0', padding:'10px 14px', verticalAlign:'middle' }
 
@@ -294,7 +294,7 @@ export default function AttendanceManagement() {
           ))}
 
           <span style={{ fontSize:'12px', fontWeight:700, color:'#64748B', marginLeft:'8px' }}>불참현황:</span>
-          {['전체', '-','결석','하원','학원','식사'].map(opt => (
+          {['전체', '-','결석','하원','학원','식사','자리비움'].map(opt => (
             <button key={opt} onClick={() => setFilterAbsence(opt)}
               style={{
                 padding:'5px 12px', borderRadius:'999px', fontSize:'12px', fontWeight:600, cursor:'pointer',
@@ -514,7 +514,3 @@ export default function AttendanceManagement() {
             </div>
           </div>
         </div>
-      )}
-    </Layout>
-  )
-}
