@@ -10,7 +10,7 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 )
 
-// ── 일정 카테고리 정의 ──────────────────────────────
+// -- 일정 카테고리 정의 ----
 const CATEGORIES = [
   { value: 'vacation',  label: '방학',    color: '#F59E0B', bg: '#FFF7ED', border: '#FDE68A' },
   { value: 'academic',  label: '학사일정', color: '#6366F1', bg: '#EEF2FF', border: '#C7D2FE' },
@@ -200,7 +200,7 @@ export default function Calendar() {
     <Layout>
       <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
 
-        {/* ── 왼쪽: 달력 영역 ── */}
+        {/* 왼쪽: 달력 영역 */}
         <div style={{ flex: 1, padding: '28px 24px', overflowY: 'auto', minWidth: 0 }}>
 
           {/* 헤더 */}
@@ -441,7 +441,7 @@ export default function Calendar() {
           })()}
         </div>
 
-        {/* ── 오른쪽: 이번 달 일정 목록 ── */}
+        {/* 오른쪽: 이번 달 일정 목록 */}
         <div style={{
           width: '300px', flexShrink: 0, borderLeft: '1px solid #E2E8F0',
           background: '#F8FAFC', display: 'flex', flexDirection: 'column', overflow: 'hidden',
@@ -506,9 +506,6 @@ export default function Calendar() {
         </div>
       </div>
 
-      {/* ═══════════════════════════════════════════
-          모달: 일정 추가 / 수정
-      ═══════════════════════════════════════════ */}
       {modalOpen && (
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '16px' }}

@@ -35,7 +35,7 @@ const isDayAvailable = (membership, dayType) => {
   return false
 }
 
-// ✅ 첫등원 임박 뱃지 계산 (첫등원일 3일 전 ~ 당일까지 표시)
+// 첫등원 임박 뱃지 계산 (첫등원일 3일 전 ~ 당일까지 표시)
 const getFirstAttendanceBadge = (dateStr) => {
   if (!dateStr) return null
   const today = new Date(); today.setHours(0, 0, 0, 0)
@@ -72,24 +72,24 @@ export default function ScheduleManagement() {
   const [slotConfig,          setSlotConfig]          = useState(loadSlotConfig)
   const [tempConfig,          setTempConfig]          = useState(loadSlotConfig)
   const [toast,               setToast]               = useState(null)
-  // ── 시간 설정 상태 (평일/주말 분리) ──────────────────────
+  // -- 시간 설정 상태 (평일/주말 분리) --
   const [isTimeConfigOpen,    setIsTimeConfigOpen]    = useState(false)
   const [timeConfig,          setTimeConfig]          = useState({ weekday: {...DEFAULT_WEEKDAY_CONFIG}, weekend: {...DEFAULT_WEEKEND_CONFIG} })
   const [tempTimeConfig,      setTempTimeConfig]      = useState({ weekday: {...DEFAULT_WEEKDAY_CONFIG}, weekend: {...DEFAULT_WEEKEND_CONFIG} })
-  const [timeTabMode,         setTimeTabMode]         = useState('weekday')  // ✅ 평일/주말 탭
-  // ── 예비 스케줄 상태 ──────────────────────────────────
+  const [timeTabMode,         setTimeTabMode]         = useState('weekday')  // 평일/주말 탭
+  // -- 예비 스케줄 상태 --
   const [activeTab,           setActiveTab]           = useState('current')
   const [backupSets,          setBackupSets]          = useState([])
   const [backupLoading,       setBackupLoading]       = useState(false)
   const [backupName,          setBackupName]          = useState('')
   const [showBackupNameInput, setShowBackupNameInput] = useState(false)
-  // ── 예비 스케줄 직접 편집 상태 ────────────────────────
+  // -- 예비 스케줄 직접 편집 상태 --
   const [isBackupEditOpen,    setIsBackupEditOpen]    = useState(false)
   const [editingBackupSet,    setEditingBackupSet]    = useState(null)   // null = 새 작성
   const [backupEditName,      setBackupEditName]      = useState('')
   const [backupEditItems,     setBackupEditItems]     = useState({})     // { studentId: { membership_type, mon_slots, ... } }
   const [backupEditLoading,   setBackupEditLoading]   = useState(false)
-  // ✅ 좌석 정렬 상태
+  // 좌석 정렬 상태
   const [sortField, setSortField] = useState('name')   // 'name' | 'seat'
   const [sortDir,   setSortDir]   = useState('asc')
 
@@ -129,13 +129,13 @@ export default function ScheduleManagement() {
 
   const getSchedule = id => schedules.find(s => s.student_id === id) || null
 
-  // ✅ 정렬 토글 함수
+  // 정렬 토글 함수
   const toggleSortSched = (field) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortField(field); setSortDir('asc') }
   }
 
-  // ✅ 정렬된 학생 목록 (이름 or 좌석 기준)
+  // 정렬된 학생 목록 (이름 or 좌석 기준)
   const displayStudents = useMemo(() => {
     return [...students].sort((a, b) => {
       if (sortField === 'seat') {
@@ -228,13 +228,13 @@ export default function ScheduleManagement() {
 
   const openConfig = () => { setTempConfig({ ...slotConfig }); setIsConfigOpen(true) }
 
-  // ── 시간 설정 핸들러 (평일/주말 분리) ────────────────────
+  // -- 시간 설정 핸들러 (평일/주말 분리) --
   const openTimeConfig = () => {
     setTempTimeConfig({
       weekday: { ...timeConfig.weekday },
       weekend: { ...timeConfig.weekend },
     })
-    setTimeTabMode('weekday')   // ✅ 열 때마다 평일 탭으로 초기화
+    setTimeTabMode('weekday')   // 열 때마다 평일 탭으로 초기화
     setIsTimeConfigOpen(true)
   }
 
@@ -258,7 +258,7 @@ export default function ScheduleManagement() {
     setTempConfig(c => ({ ...c, [cfgKey]: Math.min(20, Math.max(1, (c[cfgKey]||5)+delta)) }))
   }
 
-  // ── 예비 스케줄: 현재 스케줄 저장 ──────────────────────
+  // -- 예비 스케줄: 현재 스케줄 저장 --
   const handleSaveBackup = async () => {
     if (!backupName.trim()) { showToast('이름을 입력해주세요', 'error'); return }
     setBackupLoading(true)
@@ -291,7 +291,7 @@ export default function ScheduleManagement() {
     finally { setBackupLoading(false) }
   }
 
-  // ── 예비 스케줄: 현재로 불러오기 ─────────────────────────
+  // -- 예비 스케줄: 현재로 불러오기 --
   const handleLoadBackup = async (setId, setName) => {
     if (!window.confirm(`"${setName}" 예비 스케줄을 불러올까요?\n현재 스케줄이 이 내용으로 교체됩니다.\n\n현재 스케줄을 먼저 저장해두지 않으셨다면 취소 후 저장 먼저 해주세요.`)) return
     setBackupLoading(true)
@@ -316,13 +316,13 @@ export default function ScheduleManagement() {
           await supabase.from('schedules').insert(payload)
         }
       }
-      showToast(`"${setName}" 예비 스케줄을 불러왔어요 ✅`)
+      showToast(`"${setName}" 예비 스케줄을 불러왔어요 `)
       fetchAll()
     } catch (err) { showToast(`불러오기 실패: ${err.message}`, 'error') }
     finally { setBackupLoading(false) }
   }
 
-  // ── 예비 스케줄: 삭제 ────────────────────────────────────
+  // -- 예비 스케줄: 삭제 --
   const handleDeleteBackup = async (setId, setName) => {
     if (!window.confirm(`"${setName}" 예비 스케줄을 삭제할까요?`)) return
     const { error } = await supabase.from('schedule_sets').delete().eq('id', setId)
@@ -330,7 +330,7 @@ export default function ScheduleManagement() {
     else { showToast(`"${setName}" 삭제 완료`); fetchAll() }
   }
 
-  // ── 예비 스케줄: 직접 편집 열기 ────────────────────────
+  // -- 예비 스케줄: 직접 편집 열기 --
   const handleOpenBackupEdit = async (bset) => {
     setEditingBackupSet(bset)
     setBackupEditName(bset ? bset.name : '')
@@ -371,7 +371,7 @@ export default function ScheduleManagement() {
     setBackupEditLoading(false)
   }
 
-  // ── 예비 스케줄: 직접 편집 - 슬롯 토글 ────────────────
+  // -- 예비 스케줄: 직접 편집 - 슬롯 토글 --
   const toggleBackupSlot = (studentId, dayKey, n) => {
     setBackupEditItems(prev => {
       const cur = prev[studentId]?.[dayKey] || []
@@ -389,7 +389,7 @@ export default function ScheduleManagement() {
     })
   }
 
-  // ── 예비 스케줄: 직접 편집 저장 ────────────────────────
+  // -- 예비 스케줄: 직접 편집 저장 --
   const handleSaveBackupEdit = async () => {
     if (!backupEditName.trim()) { showToast('예비 스케줄 이름을 입력해주세요', 'error'); return }
     setBackupEditLoading(true)
@@ -443,7 +443,7 @@ export default function ScheduleManagement() {
     <Layout>
       <div style={{ padding:'28px 32px' }}>
 
-        {/* ── 탭 버튼 ── */}
+        {/* -- 탭 버튼 -- */}
         <div style={{ display:'flex', gap:'4px', marginBottom:'20px', background:'#F1F5F9', borderRadius:'14px', padding:'4px', width:'fit-content' }}>
           {[
             { key:'current', label:'📋 현재 스케줄' },
@@ -459,12 +459,12 @@ export default function ScheduleManagement() {
           ))}
         </div>
 
-        {/* ════════════════════════════════════════
+        {/* --
             현재 스케줄 탭
-        ════════════════════════════════════════ */}
+        -- */}
         {activeTab === 'current' && (<>
 
-          {/* ── 페이지 헤더 ── */}
+          {/* -- 페이지 헤더 -- */}
           <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:'24px' }}>
             <div style={{ display:'flex', alignItems:'center', gap:'14px' }}>
               <div style={{
@@ -524,7 +524,7 @@ export default function ScheduleManagement() {
             </div>
           </div>
 
-          {/* ── 범례 ── */}
+          {/* -- 범례 -- */}
           <div style={{
             display:'flex', alignItems:'center', gap:'16px',
             marginBottom:'16px', padding:'10px 16px',
@@ -564,7 +564,7 @@ export default function ScheduleManagement() {
             </span>
           </div>
 
-          {/* ── 메인 테이블 ── */}
+          {/* -- 메인 테이블 -- */}
           {loading ? (
             <div style={{ textAlign:'center', padding:'64px 0', color:'#94A3B8', fontSize:'14px' }}>
               불러오는 중...
@@ -840,9 +840,9 @@ export default function ScheduleManagement() {
           )}
         </>)}
 
-        {/* ════════════════════════════════════════
+        {/* --
             예비 스케줄 탭
-        ════════════════════════════════════════ */}
+        -- */}
         {activeTab === 'backup' && (
           <div>
             {/* 저장 방법 선택 카드 2개 */}
@@ -1004,9 +1004,9 @@ export default function ScheduleManagement() {
 
       </div>
 
-      {/* ═══════════════════════════════════════════
+      {/* --
           모달: 스케줄 추가/수정
-      ═══════════════════════════════════════════ */}
+      -- */}
       {isModalOpen && selectedStudent && (
         <div style={{
           position:'fixed', inset:0, background:'rgba(15,23,42,0.55)',
@@ -1201,9 +1201,9 @@ export default function ScheduleManagement() {
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════
+      {/* --
           모달: 교시 시간 설정 (평일/주말 탭 분리)
-      ═══════════════════════════════════════════ */}
+      -- */}
       {isTimeConfigOpen && (
         <div style={{
           position:'fixed', inset:0, background:'rgba(15,23,42,0.55)',
@@ -1235,7 +1235,7 @@ export default function ScheduleManagement() {
               </button>
             </div>
 
-            {/* ✅ 평일 / 주말 탭 */}
+            {/* 평일 / 주말 탭 */}
             <div style={{ padding:'16px 24px 0', flexShrink:0 }}>
               <div style={{ display:'flex', gap:'8px' }}>
                 {[
@@ -1340,9 +1340,9 @@ export default function ScheduleManagement() {
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════
+      {/* --
           모달: 교시 수 설정
-      ═══════════════════════════════════════════ */}
+      -- */}
       {isConfigOpen && (
         <div style={{
           position:'fixed', inset:0, background:'rgba(15,23,42,0.55)',
@@ -1425,9 +1425,9 @@ export default function ScheduleManagement() {
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════
+      {/* --
           모달: 예비 스케줄 직접 편집 (전체화면)
-      ═══════════════════════════════════════════ */}
+      -- */}
       {isBackupEditOpen && (
         <div style={{
           position:'fixed', inset:0, background:'#F8FAFC',
@@ -1618,7 +1618,7 @@ export default function ScheduleManagement() {
         </div>
       )}
 
-      {/* ── 토스트 ── */}
+      {/* -- 토스트 -- */}
       {toast && (
         <div style={{
           position:'fixed', bottom:'24px', right:'24px', zIndex:100,

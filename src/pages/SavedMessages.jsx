@@ -273,9 +273,9 @@ export default function SavedMessages() {
         )}
       </div>
 
-      {/* ═══════════════════════════════════════════
+      {/* --
           모달: 문구 추가 / 수정
-      ═══════════════════════════════════════════ */}
+      -- */}
       {modalOpen && (
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '16px' }}

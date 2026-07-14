@@ -1,14 +1,14 @@
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import logoSrc from '../assets/smc_logo.png'
-import { getTodayQuote } from '../lib/encouragementQuotes' // ✅ 오늘의 응원문구
+import { getTodayQuote } from '../lib/encouragementQuotes'
 import {
   LayoutDashboard, Users, CalendarDays, MessageSquare,
   LogOut, ChevronDown, ChevronRight, ClipboardList, Eye, BookOpen, Star,
-  UserCheck, Award,  // ✅ 직원 아이콘 + 상벌점 아이콘
-  Sparkles,          // ✅ 응원문구 아이콘
-  BarChart3,         // ✅ [신규] 알림톡 발송 결과 아이콘
-  Archive,           // ✅ [신규] 매뉴얼 저장함 아이콘
+  UserCheck, Award,
+  Sparkles,
+  BarChart3,
+  Archive,
   BookMarked,
   CalendarCheck,
 } from 'lucide-react'
@@ -19,7 +19,7 @@ const TOPBAR_H  = 58
 const menuItems = [
   { label: '대시보드',  path: '/dashboard',  icon: LayoutDashboard },
   { label: '학생 관리', path: '/students',   icon: Users },
-  { label: '상벌점 관리', path: '/points',   icon: Award },
+  { label: '상벨점 관리', path: '/points',   icon: Award },
   {
     label: '스케줄 관리', path: '/schedules', icon: CalendarDays,
     children: [
@@ -31,7 +31,7 @@ const menuItems = [
     label: '알림톡', path: '/notifications', icon: MessageSquare,
     children: [
       { label: '스케줄 알림톡', path: '/notifications/schedule', icon: Eye        },
-      { label: '상벌점 알림톡', path: '/notifications/rewards',  icon: Star       },
+      { label: '상벨점 알림톡', path: '/notifications/rewards',  icon: Star       },
       { label: '발송 결과 확인', path: '/notifications/logs',    icon: BarChart3  },
       { label: '문구 저장',     path: '/notifications/messages', icon: BookMarked },
     ],
@@ -45,11 +45,11 @@ function getPageTitle(p) {
   const map = {
     '/dashboard':              '대시보드',
     '/students':               '학생 관리',
-    '/points':                 '상벌점 관리',
+    '/points':                 '상벨점 관리',
     '/schedules':              '스케줄 설정',
     '/schedules/attendance':   '등원 기록',
     '/notifications/schedule': '스케줄 알림톡',
-    '/notifications/rewards':  '상벌점 알림톡',
+    '/notifications/rewards':  '상벨점 알림톡',
     '/notifications/logs':     '발송 결과 확인',
     '/notifications/messages': '문구 저장',
     '/calendar':               '학사 캘린더',
@@ -111,13 +111,12 @@ export default function Layout({ children }) {
 
         <div style={{ flex:1, padding:'0 24px', display:'flex', alignItems:'center', gap:'6px', overflow:'hidden' }}>
           <span style={{ color:'#334155', fontSize:'12px', flexShrink:0 }}>SMC</span>
-          <span style={{ color:'#1E293B', fontSize:'12px', flexShrink:0 }}>›</span>
+          <span style={{ color:'#1E293B', fontSize:'12px', flexShrink:0 }}>&rsaquo;</span>
           <span style={{ color:'#94A3B8', fontSize:'13px', fontWeight:500, flexShrink:0 }}>
             {getPageTitle(location.pathname)}
           </span>
 
-          {/* ✅ 오늘의 응원문구 — 날짜가 바뀌면 자동으로 다른 문구로 바뀌어요 */}
-          <span style={{ color:'#1E293B', fontSize:'12px', flexShrink:0, marginLeft:'4px' }}>·</span>
+          <span style={{ color:'#1E293B', fontSize:'12px', flexShrink:0, marginLeft:'4px' }}>&middot;</span>
           <span style={{
             display:'flex', alignItems:'center', gap:'6px',
             fontSize:'13px', fontWeight:500, color:'#A5B4FC',
@@ -268,4 +267,16 @@ export default function Layout({ children }) {
               onMouseEnter={e => { e.currentTarget.style.color='#FCA5A5'; e.currentTarget.style.background='rgba(239,68,68,0.1)' }}
               onMouseLeave={e => { e.currentTarget.style.color='#475569'; e.currentTarget.style.background='transparent' }}
             >
-              <LogOut size={1
+              <LogOut size={18} strokeWidth={1.8} />
+              <span>로그아웃</span>
+            </button>
+          </div>
+        </aside>
+
+        <main style={{ flex:1, overflow:'auto', background:'#F8FAFC' }}>
+          {children}
+        </main>
+      </div>
+    </div>
+  )
+}
