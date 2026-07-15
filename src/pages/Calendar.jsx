@@ -206,6 +206,68 @@ export default function Calendar() {
 
   const todayStr = toDateStr(today)
 
+  // ── 오른쪽 패널: 날짜별 그룹핑 계산 ──
+  // 각 이벤트를 "이번 달 내 시작일"로 그룹화 (이전 달에 시작한 이벤트는 1일로)
+  const dayGroupMap = {}
+  monthEvents.forEach(evt => {
+    const key = evt.start_date < firstOfMonth ? firstOfMonth : evt.start_date
+    if (!dayGroupMap[key]) dayGroupMap[key] = []
+    dayGroupMap[key].push(evt)
+  })
+  const dayGroups = Object.keys(dayGroupMap).sort().map(ds => ({
+    dateStr: ds,
+    date: parseLocalDate(ds),
+    evts: dayGroupMap[ds],
+  }))
+
+  // 이번 달 공휴일 목록
+  const monthHolidays = []
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+    const name = getHolidayName(ds)
+    if (name) monthHolidays.push({ date: ds, name })
+  }
+
+  // 오른쪽 패널: 이벤트 카드 컴포넌트
+  const SideEventCard = ({ evt }) => {
+    const cat = getCat(evt.category)
+    const isMultiDay = evt.start_date !== evt.end_date
+    return (
+      <div
+        onClick={() => openEdit(evt)}
+        style={{
+          padding: '10px 12px', borderRadius: '10px', cursor: 'pointer',
+          background: '#fff', border: `1.5px solid ${evt.color || cat.border}`,
+          transition: 'box-shadow 0.15s',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)' }}
+        onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+          <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: getEventColor(evt), flexShrink: 0 }} />
+          <span style={{ fontSize: '12px', fontWeight: 700, color: '#0F172A', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {evt.title}
+          </span>
+          <span style={{
+            padding: '1px 5px', borderRadius: '999px', fontSize: '9px', fontWeight: 700,
+            background: cat.bg, color: cat.color, flexShrink: 0,
+          }}>{cat.label}</span>
+        </div>
+        {isMultiDay && (
+          <p style={{ fontSize: '10px', color: '#94A3B8', margin: 0, paddingLeft: '13px' }}>
+            {evt.start_date} ~ {evt.end_date}
+          </p>
+        )}
+        {evt.description && (
+          <p style={{ fontSize: '10px', color: '#64748B', margin: '2px 0 0', paddingLeft: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {evt.description}
+          </p>
+        )}
+      </div>
+    )
+  }
+
   return (
     <Layout>
       <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
@@ -355,8 +417,6 @@ export default function Calendar() {
                     {/* 이벤트 바 (최대 2개 표시, 나머지 +N) */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                       {dayEvents.slice(0, 2).map(evt => {
-                        const cat = getCat(evt.category)
-                        // 이벤트 시작일이 오늘인지 또는 월의 첫날인지 (바 시작 표시)
                         const isStart = evt.start_date === ds || ds === firstOfMonth
                         const isEnd   = evt.end_date   === ds || ds === lastOfMonth
                         return (
@@ -483,95 +543,173 @@ export default function Calendar() {
           })()}
         </div>
 
-        {/* 오른쪽: 이번 달 일정 목록 */}
+        {/* ── 오른쪽: 이번 달 일정 목록 (일 단위 그룹) ── */}
         <div style={{
           width: '300px', flexShrink: 0, borderLeft: '1px solid #E2E8F0',
           background: '#F8FAFC', display: 'flex', flexDirection: 'column', overflow: 'hidden',
         }}>
+          {/* 패널 헤더: 날짜 선택 여부에 따라 다르게 표시 */}
           <div style={{ padding: '20px 18px 14px', borderBottom: '1px solid #E2E8F0', flexShrink: 0 }}>
-            <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
-              {year}년 {MONTHS_KR[month]} 일정
-            </h3>
-            <p style={{ fontSize: '12px', color: '#94A3B8', marginTop: '3px' }}>
-              {monthEvents.length}개의 일정
-            </p>
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
-            {/* 이번 달 공휴일 */}
-            {(() => {
-              const monthHolidays = []
-              const daysInMonth = new Date(year, month + 1, 0).getDate()
-              for (let d = 1; d <= daysInMonth; d++) {
-                const ds = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`
-                const name = getHolidayName(ds)
-                if (name) monthHolidays.push({ date: ds, name })
-              }
-              if (monthHolidays.length === 0) return null
+            {selectedDay ? (() => {
+              const d = parseLocalDate(selectedDay)
+              const dow = d.getDay()
+              const selDayEvts = eventsOnDate(selectedDay).filter(e => catFilter === 'all' || e.category === catFilter)
               return (
-                <div style={{ marginBottom: '12px', padding: '10px', background: '#FEF2F2', borderRadius: '10px', border: '1px solid #FECACA' }}>
-                  <p style={{ fontSize: '11px', fontWeight: 700, color: '#DC2626', marginBottom: '6px', letterSpacing: '0.04em' }}>
-                    이번 달 공휴일 ({monthHolidays.length}일)
-                  </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    {monthHolidays.map(h => (
-                      <div key={h.date} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '11px', color: '#EF4444', fontWeight: 700, minWidth: '36px' }}>
-                          {h.date.slice(5).replace('-', '/')}
-                        </span>
-                        <span style={{ fontSize: '11px', color: '#7F1D1D' }}>{h.name}</span>
-                      </div>
-                    ))}
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                      {d.getMonth() + 1}월 {d.getDate()}일 ({DAYS_KR[dow]})
+                    </h3>
+                    <button
+                      onClick={() => setSelectedDay(null)}
+                      style={{
+                        fontSize: '11px', color: '#6366F1', fontWeight: 700,
+                        border: 'none', background: 'none', cursor: 'pointer', padding: '2px 6px',
+                        display: 'flex', alignItems: 'center', gap: '3px',
+                      }}
+                    >
+                      ← 전체 보기
+                    </button>
                   </div>
-                </div>
+                  <p style={{ fontSize: '12px', color: '#94A3B8', marginTop: '3px' }}>
+                    {selDayEvts.length}개의 일정
+                  </p>
+                </>
+              )
+            })() : (
+              <>
+                <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                  {year}년 {MONTHS_KR[month]} 일정
+                </h3>
+                <p style={{ fontSize: '12px', color: '#94A3B8', marginTop: '3px' }}>
+                  {monthEvents.length}개의 일정 · 날짜를 클릭하면 해당 날만 볼 수 있어요
+                </p>
+              </>
+            )}
+          </div>
+
+          {/* 패널 바디 */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+            {selectedDay ? (() => {
+              // ── 선택된 날짜 일정만 표시 ──
+              const dayEvts = eventsOnDate(selectedDay).filter(e => catFilter === 'all' || e.category === catFilter)
+              const holiday = getHolidayName(selectedDay)
+              return (
+                <>
+                  {holiday && (
+                    <div style={{ marginBottom: '10px', padding: '8px 12px', background: '#FEF2F2', borderRadius: '10px', border: '1px solid #FECACA' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#DC2626' }}>🎌 {holiday}</span>
+                    </div>
+                  )}
+                  {dayEvts.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                      <p style={{ fontSize: '32px', marginBottom: '8px' }}>📭</p>
+                      <p style={{ fontSize: '13px', color: '#94A3B8', marginBottom: '12px' }}>이 날은 등록된 일정이 없어요</p>
+                      <button
+                        onClick={() => openNew(selectedDay)}
+                        style={{
+                          padding: '8px 16px', borderRadius: '10px', border: 'none',
+                          background: '#EEF2FF', color: '#6366F1', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+                        }}
+                      >+ 일정 추가하기</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {dayEvts.map(evt => <SideEventCard key={evt.id} evt={evt} />)}
+                    </div>
+                  )}
+                </>
+              )
+            })() : (() => {
+              // ── 전체 월 일정: 일 단위 그룹핑 ──
+              return (
+                <>
+                  {/* 공휴일 섹션 */}
+                  {monthHolidays.length > 0 && (
+                    <div style={{ marginBottom: '12px', padding: '10px', background: '#FEF2F2', borderRadius: '10px', border: '1px solid #FECACA' }}>
+                      <p style={{ fontSize: '11px', fontWeight: 700, color: '#DC2626', marginBottom: '6px', letterSpacing: '0.04em' }}>
+                        이번 달 공휴일 ({monthHolidays.length}일)
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {monthHolidays.map(h => (
+                          <div key={h.date} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '11px', color: '#EF4444', fontWeight: 700, minWidth: '36px' }}>
+                              {h.date.slice(5).replace('-', '/')}
+                            </span>
+                            <span style={{ fontSize: '11px', color: '#7F1D1D' }}>{h.name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {loading ? (
+                    <p style={{ textAlign: 'center', color: '#94A3B8', fontSize: '13px', padding: '40px 0' }}>불러오는 중...</p>
+                  ) : dayGroups.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                      <p style={{ fontSize: '32px', marginBottom: '8px' }}>📭</p>
+                      <p style={{ fontSize: '13px', color: '#94A3B8' }}>이번 달 일정이 없어요</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      {dayGroups.map(group => {
+                        const dow = group.date.getDay()
+                        const isToday = group.dateStr === todayStr
+                        const isSelected = selectedDay === group.dateStr
+                        const holiday = getHolidayName(group.dateStr)
+                        const dayNum = group.date.getDate()
+                        const numColor = isToday ? '#fff' : (holiday || dow === 0) ? '#EF4444' : dow === 6 ? '#3B82F6' : '#0F172A'
+                        const labelColor = (holiday || dow === 0) ? '#EF4444' : dow === 6 ? '#3B82F6' : '#374151'
+
+                        return (
+                          <div key={group.dateStr}>
+                            {/* 날짜 헤더 (클릭하면 해당 날 선택) */}
+                            <div
+                              onClick={() => setSelectedDay(isSelected ? null : group.dateStr)}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: '8px',
+                                marginBottom: '6px', cursor: 'pointer', padding: '4px 2px',
+                                borderRadius: '8px',
+                                background: isSelected ? '#EEF2FF' : 'transparent',
+                              }}
+                            >
+                              <div style={{
+                                width: '30px', height: '30px', borderRadius: '50%',
+                                background: isToday ? '#6366F1' : '#F1F5F9',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                flexShrink: 0,
+                              }}>
+                                <span style={{ fontSize: '12px', fontWeight: 700, color: numColor }}>
+                                  {dayNum}
+                                </span>
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <span style={{ fontSize: '13px', fontWeight: 700, color: labelColor }}>
+                                  {MONTHS_KR[group.date.getMonth()]} {dayNum}일 ({DAYS_KR[dow]})
+                                </span>
+                                {holiday && (
+                                  <span style={{ fontSize: '10px', color: '#EF4444', marginLeft: '5px', fontWeight: 600 }}>
+                                    · {holiday}
+                                  </span>
+                                )}
+                              </div>
+                              <span style={{ fontSize: '11px', color: '#94A3B8', flexShrink: 0 }}>
+                                {group.evts.length}개
+                              </span>
+                            </div>
+
+                            {/* 해당 날짜의 이벤트 카드들 */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingLeft: '8px' }}>
+                              {group.evts.map(evt => <SideEventCard key={evt.id} evt={evt} />)}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </>
               )
             })()}
-            {loading ? (
-              <p style={{ textAlign: 'center', color: '#94A3B8', fontSize: '13px', padding: '40px 0' }}>불러오는 중...</p>
-            ) : monthEvents.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px 0' }}>
-                <p style={{ fontSize: '32px', marginBottom: '8px' }}>📭</p>
-                <p style={{ fontSize: '13px', color: '#94A3B8' }}>이번 달 일정이 없어요</p>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {monthEvents.map(evt => {
-                  const cat = getCat(evt.category)
-                  const isMultiDay = evt.start_date !== evt.end_date
-                  return (
-                    <div
-                      key={evt.id}
-                      onClick={() => { openEdit(evt) }}
-                      style={{
-                        padding: '12px 14px', borderRadius: '12px', cursor: 'pointer',
-                        background: '#fff', border: `1.5px solid ${evt.color || cat.border}`,
-                        transition: 'box-shadow 0.15s',
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)' }}
-                      onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none' }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: getEventColor(evt), flexShrink: 0 }} />
-                        <span style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {evt.title}
-                        </span>
-                        <span style={{
-                          padding: '1px 6px', borderRadius: '999px', fontSize: '10px', fontWeight: 700,
-                          background: cat.bg, color: cat.color, flexShrink: 0,
-                        }}>{cat.label}</span>
-                      </div>
-                      <p style={{ fontSize: '11px', color: '#94A3B8', margin: 0, paddingLeft: '14px' }}>
-                        {isMultiDay ? `${evt.start_date} ~ ${evt.end_date}` : evt.start_date}
-                      </p>
-                      {evt.description && (
-                        <p style={{ fontSize: '11px', color: '#64748B', margin: '4px 0 0', paddingLeft: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {evt.description}
-                        </p>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
           </div>
         </div>
       </div>
