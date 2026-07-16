@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import logoSrc from '../assets/smc_logo.png'
@@ -11,6 +12,9 @@ import {
   Archive,
   BookMarked,
   CalendarCheck,
+  Pencil,
+  Check,
+  X as XIcon,
 } from 'lucide-react'
 
 const SIDEBAR_W = 400
@@ -56,7 +60,7 @@ function getPageTitle(p) {
     '/staff':                  '직원 근무표',
     '/manuals':                '매뉴얼 저장함',
   }
-  return map[p] || 'SMC 스터디카페'
+  return map[p] || ''
 }
 
 const S = {
@@ -83,6 +87,35 @@ export default function Layout({ children }) {
   const navigate = useNavigate()
   const location = useLocation()
 
+  // ── 지점명 (localStorage에 저장, 온스케줄은 앱 이름으로 고정) ──
+  const [branchName, setBranchName] = useState(
+    () => localStorage.getItem('onschedule_branch_name') || 'SMC 스터디카페'
+  )
+  const [isEditingBranch, setIsEditingBranch] = useState(false)
+  const [tempBranch, setTempBranch] = useState('')
+  const branchInputRef = useRef(null)
+
+  useEffect(() => {
+    if (isEditingBranch && branchInputRef.current) {
+      branchInputRef.current.focus()
+      branchInputRef.current.select()
+    }
+  }, [isEditingBranch])
+
+  const startEditBranch = () => {
+    setTempBranch(branchName)
+    setIsEditingBranch(true)
+  }
+  const saveBranch = () => {
+    const name = tempBranch.trim() || branchName
+    setBranchName(name)
+    localStorage.setItem('onschedule_branch_name', name)
+    setIsEditingBranch(false)
+  }
+  const cancelEditBranch = () => {
+    setIsEditingBranch(false)
+  }
+
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100vh', width:'100vw', overflow:'hidden' }}>
 
@@ -97,20 +130,22 @@ export default function Layout({ children }) {
           padding:'0 20px', height:'100%',
           borderRight:'1px solid rgba(255,255,255,0.07)',
         }}>
-          <img src={logoSrc} alt="SMC 로고" style={{
+          <img src={logoSrc} alt="로고" style={{
             width:'38px', height:'auto', mixBlendMode:'screen',
             filter:'drop-shadow(0 0 10px rgba(184,138,60,0.4))', flexShrink:0,
           }} />
           <div>
-            <p style={{ color:'#E2E8F0', fontWeight:700, fontSize:'15px', letterSpacing:'-0.01em', lineHeight:1.2 }}>
-              SMC 스터디카페
+            {/* 온스케줄 - 앱 고정명 */}
+            <p style={{ color:'#818CF8', fontWeight:800, fontSize:'15px', letterSpacing:'-0.02em', lineHeight:1.2 }}>
+              온스케줄
             </p>
-            <p style={{ color:'#475569', fontSize:'11px', marginTop:'2px' }}>관리자 시스템</p>
+            {/* 지점명 */}
+            <p style={{ color:'#475569', fontSize:'11px', marginTop:'2px' }}>{branchName}</p>
           </div>
         </div>
 
         <div style={{ flex:1, padding:'0 24px', display:'flex', alignItems:'center', gap:'6px', overflow:'hidden' }}>
-          <span style={{ color:'#334155', fontSize:'12px', flexShrink:0 }}>SMC</span>
+          <span style={{ color:'#475569', fontSize:'12px', flexShrink:0 }}>{branchName}</span>
           <span style={{ color:'#1E293B', fontSize:'12px', flexShrink:0 }}>&rsaquo;</span>
           <span style={{ color:'#94A3B8', fontSize:'13px', fontWeight:500, flexShrink:0 }}>
             {getPageTitle(location.pathname)}
@@ -154,16 +189,70 @@ export default function Layout({ children }) {
             padding:'28px 20px 22px', borderBottom:'1px solid rgba(255,255,255,0.07)',
             flexShrink:0,
           }}>
-            <img src={logoSrc} alt="SMC" style={{
+            <img src={logoSrc} alt="로고" style={{
               width:'96px', height:'auto', mixBlendMode:'screen',
               filter:'drop-shadow(0 0 18px rgba(184,138,60,0.35))', display:'block',
             }} />
+            {/* 앱 이름 - 온스케줄 고정 */}
             <p style={{
-              color:'#E2E8F0', fontWeight:700, fontSize:'16px',
-              marginTop:'14px', letterSpacing:'-0.01em', textAlign:'center',
-            }}>SMC 스터디카페</p>
+              color:'#818CF8', fontWeight:800, fontSize:'20px',
+              marginTop:'14px', letterSpacing:'-0.02em', textAlign:'center',
+              textShadow:'0 0 20px rgba(129,140,248,0.4)',
+            }}>온스케줄</p>
+
+            {/* 지점명 - 클릭하면 수정 가능 */}
+            {isEditingBranch ? (
+              <div style={{ display:'flex', alignItems:'center', gap:'4px', marginTop:'5px' }}>
+                <input
+                  ref={branchInputRef}
+                  value={tempBranch}
+                  onChange={e => setTempBranch(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') saveBranch()
+                    if (e.key === 'Escape') cancelEditBranch()
+                  }}
+                  style={{
+                    fontSize:'12px', fontWeight:600, color:'#E2E8F0',
+                    background:'rgba(255,255,255,0.08)', border:'1px solid rgba(129,140,248,0.5)',
+                    borderRadius:'6px', padding:'3px 8px', outline:'none', width:'130px',
+                    textAlign:'center',
+                  }}
+                />
+                <button
+                  onClick={saveBranch}
+                  style={{ background:'none', border:'none', cursor:'pointer', padding:'2px', color:'#818CF8' }}
+                  title="저장"
+                >
+                  <Check size={14} />
+                </button>
+                <button
+                  onClick={cancelEditBranch}
+                  style={{ background:'none', border:'none', cursor:'pointer', padding:'2px', color:'#475569' }}
+                  title="취소"
+                >
+                  <XIcon size={14} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={startEditBranch}
+                title="지점명 수정"
+                style={{
+                  display:'inline-flex', alignItems:'center', gap:'5px',
+                  marginTop:'5px', background:'none', border:'none', cursor:'pointer',
+                  padding:'3px 8px', borderRadius:'6px',
+                  transition:'background 0.15s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'none' }}
+              >
+                <span style={{ fontSize:'12px', fontWeight:600, color:'#94A3B8' }}>{branchName}</span>
+                <Pencil size={11} style={{ color:'#475569' }} />
+              </button>
+            )}
+
             <span style={{
-              display:'inline-block', marginTop:'6px', padding:'3px 14px',
+              display:'inline-block', marginTop:'8px', padding:'3px 14px',
               borderRadius:'999px', fontSize:'11px', fontWeight:600,
               background:'rgba(99,102,241,0.2)', color:'#818CF8', letterSpacing:'0.04em',
             }}>관리자 시스템</span>
@@ -203,80 +292,4 @@ export default function Layout({ children }) {
                     </NavLink>
 
                     {isParent && (
-                      <div style={{
-                        marginLeft:'20px', marginTop:'2px', marginBottom:'4px',
-                        paddingLeft:'14px', borderLeft:'1px solid rgba(255,255,255,0.08)',
-                        display:'flex', flexDirection:'column', gap:'1px',
-                      }}>
-                        {item.children.map(child => {
-                          const C = child.icon
-                          const isCActive = location.pathname === child.path
-                          return (
-                            <NavLink
-                              key={child.path} to={child.path} isActive={isCActive}
-                              style={{
-                                display:'flex', alignItems:'center', gap:'9px',
-                                padding:'9px 12px', borderRadius:'10px',
-                                fontSize:'13px', fontWeight: isCActive ? 600 : 400,
-                                textDecoration:'none', transition:'all 0.15s',
-                                color: isCActive ? '#A5B4FC' : '#64748B',
-                                background: isCActive ? 'rgba(99,102,241,0.12)' : 'transparent',
-                              }}
-                            >
-                              <C size={14} />
-                              {child.label}
-                            </NavLink>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )
-              }
-
-              return (
-                <NavLink
-                  key={item.path} to={item.path} isActive={isActive}
-                  style={{
-                    position:'relative', display:'flex', alignItems:'center',
-                    gap:'12px', padding:'11px 14px', borderRadius:'12px',
-                    fontSize:'14px', fontWeight:500, textDecoration:'none',
-                    transition:'all 0.15s',
-                  }}
-                >
-                  {isActive && <span style={{
-                    position:'absolute', left:0, top:'50%', transform:'translateY(-50%)',
-                    width:'3px', height:'24px', background:'#818CF8', borderRadius:'0 4px 4px 0',
-                  }} />}
-                  <item.icon size={18} strokeWidth={isActive ? 2.2 : 1.8} />
-                  <span>{item.label}</span>
-                </NavLink>
-              )
-            })}
-          </nav>
-
-          <div style={{ padding:'12px', flexShrink:0, borderTop:'1px solid rgba(255,255,255,0.07)' }}>
-            <button
-              onClick={async () => { await supabase.auth.signOut(); navigate('/login') }}
-              style={{
-                width:'100%', display:'flex', alignItems:'center', gap:'12px',
-                padding:'11px 14px', borderRadius:'12px', fontSize:'14px',
-                color:'#475569', background:'transparent', border:'none', cursor:'pointer',
-                transition:'all 0.15s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.color='#FCA5A5'; e.currentTarget.style.background='rgba(239,68,68,0.1)' }}
-              onMouseLeave={e => { e.currentTarget.style.color='#475569'; e.currentTarget.style.background='transparent' }}
-            >
-              <LogOut size={18} strokeWidth={1.8} />
-              <span>로그아웃</span>
-            </button>
-          </div>
-        </aside>
-
-        <main style={{ flex:1, overflow:'auto', background:'#F8FAFC' }}>
-          {children}
-        </main>
-      </div>
-    </div>
-  )
-}
+                      <div styl

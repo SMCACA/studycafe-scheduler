@@ -38,7 +38,7 @@ function getWeekRange() {
 }
 
 // 학년 정렬 순서
-const GRADE_ORDER = ['고3','고2','고1','중3','중2','중1']
+const GRADE_ORDER = ['고3','고2','고1','중3','중2','중1','성인']
 
 export default function Dashboard() {
   const [students,      setStudents]      = useState([])     // 재원생만 (학년 분포용)
@@ -117,9 +117,10 @@ export default function Dashboard() {
     .filter(g => gradeMap[g])
     .map(g => ({ grade: g, count: gradeMap[g] }))
 
-  const highCount = students.filter(s => s.grade?.startsWith('고')).length
-  const midCount  = students.filter(s => s.grade?.startsWith('중')).length
-  const maxCount  = gradeDist.length > 0 ? Math.max(...gradeDist.map(g => g.count)) : 1
+  const highCount  = students.filter(s => s.grade?.startsWith('고')).length
+  const midCount   = students.filter(s => s.grade?.startsWith('중')).length
+  const adultCount = students.filter(s => s.grade === '성인').length
+  const maxCount   = gradeDist.length > 0 ? Math.max(...gradeDist.map(g => g.count)) : 1
 
   // ✅ [교체] SMC 재원생/비재원생 원형 그래프용 데이터
   //    StudentManagement.jsx의 ACADEMY_STYLE과 색을 맞춰서, 다른 화면과 똑같은 색으로 보이게 했어요.
@@ -164,7 +165,10 @@ export default function Dashboard() {
             loading={loading}
             value={students.length}
             label="전체 학생"
-            sub={students.length > 0 ? `고등부 ${highCount}명 · 중등부 ${midCount}명` : '아직 등록된 학생이 없어요'}
+            sub={students.length > 0
+              ? `고등부 ${highCount}명 · 중등부 ${midCount}명${adultCount > 0 ? ` · 성인 ${adultCount}명` : ''}`
+              : '아직 등록된 학생이 없어요'
+            }
           />
 
           {/* 이번 주 알림톡 */}
@@ -272,8 +276,9 @@ export default function Dashboard() {
                   <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
                     {gradeDist.map(({ grade, count }) => {
                       const isHigh   = grade.startsWith('고')
-                      const barColor = isHigh ? '#6366F1' : '#10B981'
-                      const barBg    = isHigh ? '#EEF2FF' : '#ECFDF5'
+                      const isAdult  = grade === '성인'
+                      const barColor = isHigh ? '#6366F1' : isAdult ? '#F59E0B' : '#10B981'
+                      const barBg    = isHigh ? '#EEF2FF' : isAdult ? '#FFF7ED' : '#ECFDF5'
                       const pct      = Math.round((count / maxCount) * 100)
                       return (
                         <div key={grade}>
@@ -470,13 +475,4 @@ function StatusDonutChart({ data, total }) {
           />
         )
       })}
-      {/* 가운데 전체 인원수 텍스트 */}
-      <text x="50%" y="48%" textAnchor="middle" fontSize="22" fontWeight="800" fill="#0F172A">
-        {total}
-      </text>
-      <text x="50%" y="64%" textAnchor="middle" fontSize="11" fontWeight="600" fill="#94A3B8">
-        재원생
-      </text>
-    </svg>
-  )
-}
+      {/* 가운데 전체 인원수 텍
