@@ -181,10 +181,10 @@ export default function ScheduleManagement() {
         student_id: student.id,
         seat_number: schedule.seat_number || student.seat_number || '',
         membership_type: schedule.membership_type || '풀',
-        mon_slots: schedule.mon_slots || [], tue_slots: schedule.tue_slots || [],
-        wed_slots: schedule.wed_slots || [], thu_slots: schedule.thu_slots || [],
-        fri_slots: schedule.fri_slots || [], sat_slots: schedule.sat_slots || [],
-        sun_slots: schedule.sun_slots || [],
+        mon_slots: [...(schedule.mon_slots || [])], tue_slots: [...(schedule.tue_slots || [])],
+        wed_slots: [...(schedule.wed_slots || [])], thu_slots: [...(schedule.thu_slots || [])],
+        fri_slots: [...(schedule.fri_slots || [])], sat_slots: [...(schedule.sat_slots || [])],
+        sun_slots: [...(schedule.sun_slots || [])],
       })
     } else {
       setEditingSchedule(null)
@@ -295,10 +295,10 @@ export default function ScheduleManagement() {
         student_id:      s.student_id,
         seat_number:     s.seat_number,
         membership_type: s.membership_type,
-        mon_slots: s.mon_slots || [], tue_slots: s.tue_slots || [],
-        wed_slots: s.wed_slots || [], thu_slots: s.thu_slots || [],
-        fri_slots: s.fri_slots || [], sat_slots: s.sat_slots || [],
-        sun_slots: s.sun_slots || [],
+        mon_slots: [...(s.mon_slots || [])], tue_slots: [...(s.tue_slots || [])],
+        wed_slots: [...(s.wed_slots || [])], thu_slots: [...(s.thu_slots || [])],
+        fri_slots: [...(s.fri_slots || [])], sat_slots: [...(s.sat_slots || [])],
+        sun_slots: [...(s.sun_slots || [])],
       }))
       if (items.length > 0) {
         const { error: ie } = await supabase.from('schedule_set_items').insert(items)
@@ -329,10 +329,10 @@ export default function ScheduleManagement() {
           const snapItems = schedules.map(s => ({
             set_id: snapSet.id, student_id: s.student_id, seat_number: s.seat_number,
             membership_type: s.membership_type,
-            mon_slots: s.mon_slots || [], tue_slots: s.tue_slots || [],
-            wed_slots: s.wed_slots || [], thu_slots: s.thu_slots || [],
-            fri_slots: s.fri_slots || [], sat_slots: s.sat_slots || [],
-            sun_slots: s.sun_slots || [],
+            mon_slots: [...(s.mon_slots || [])], tue_slots: [...(s.tue_slots || [])],
+            wed_slots: [...(s.wed_slots || [])], thu_slots: [...(s.thu_slots || [])],
+            fri_slots: [...(s.fri_slots || [])], sat_slots: [...(s.sat_slots || [])],
+            sun_slots: [...(s.sun_slots || [])],
           }))
           if (snapItems.length > 0) await supabase.from('schedule_set_items').insert(snapItems)
         }
@@ -348,10 +348,10 @@ export default function ScheduleManagement() {
           student_id:      item.student_id,
           seat_number:     item.seat_number,
           membership_type: item.membership_type,
-          mon_slots: item.mon_slots || [], tue_slots: item.tue_slots || [],
-          wed_slots: item.wed_slots || [], thu_slots: item.thu_slots || [],
-          fri_slots: item.fri_slots || [], sat_slots: item.sat_slots || [],
-          sun_slots: item.sun_slots || [],
+          mon_slots: [...(item.mon_slots || [])], tue_slots: [...(item.tue_slots || [])],
+          wed_slots: [...(item.wed_slots || [])], thu_slots: [...(item.thu_slots || [])],
+          fri_slots: [...(item.fri_slots || [])], sat_slots: [...(item.sat_slots || [])],
+          sun_slots: [...(item.sun_slots || [])],
         }
         if (existing) {
           await supabase.from('schedules').update(payload).eq('id', existing.id)
@@ -435,26 +435,19 @@ export default function ScheduleManagement() {
     }
 
     let initialItems = {}
-    // 현재 재원생 기반으로 초기화
-    // [버그 수정] 기존에 mon_slots 등을 항상 [] 로 초기화하던 것을 현재 스케줄 슬롯으로 채움
-    for (const stu of students) {
-      const existing = schedules.find(s => s.student_id === stu.id)
-      initialItems[stu.id] = {
-        seat_number:     existing?.seat_number || stu.seat_number || '',
-        membership_type: existing?.membership_type || '풀',
-        mon_slots: existing?.mon_slots || [],
-        tue_slots: existing?.tue_slots || [],
-        wed_slots: existing?.wed_slots || [],
-        thu_slots: existing?.thu_slots || [],
-        fri_slots: existing?.fri_slots || [],
-        sat_slots: existing?.sat_slots || [],
-        sun_slots: existing?.sun_slots || [],
-      }
-    }
 
     if (bset) {
-      // 기존 예비 스케줄 아이템 불러오기
-      // [버그 수정] error도 함께 받아서 실패 시 토스트 표시
+      // ── 기존 예비 스케줄 편집 ──
+      // 모든 학생을 빈 배열로 초기화 (현재 스케줄 데이터가 예비 스케줄에 섞이는 것을 방지)
+      for (const stu of students) {
+        initialItems[stu.id] = {
+          seat_number:     stu.seat_number || '',
+          membership_type: '풀',
+          mon_slots: [], tue_slots: [], wed_slots: [],
+          thu_slots: [], fri_slots: [], sat_slots: [], sun_slots: [],
+        }
+      }
+      // 예비 스케줄에 실제 저장된 항목만 deep copy로 덮어씀
       const { data: items, error: fetchErr } = await supabase
         .from('schedule_set_items').select('*').eq('set_id', bset.id)
       if (fetchErr) {
@@ -464,11 +457,25 @@ export default function ScheduleManagement() {
           initialItems[item.student_id] = {
             seat_number:     item.seat_number || '',
             membership_type: item.membership_type || '풀',
-            mon_slots: item.mon_slots || [], tue_slots: item.tue_slots || [],
-            wed_slots: item.wed_slots || [], thu_slots: item.thu_slots || [],
-            fri_slots: item.fri_slots || [], sat_slots: item.sat_slots || [],
-            sun_slots: item.sun_slots || [],
+            mon_slots: [...(item.mon_slots || [])], tue_slots: [...(item.tue_slots || [])],
+            wed_slots: [...(item.wed_slots || [])], thu_slots: [...(item.thu_slots || [])],
+            fri_slots: [...(item.fri_slots || [])], sat_slots: [...(item.sat_slots || [])],
+            sun_slots: [...(item.sun_slots || [])],
           }
+        }
+      }
+    } else {
+      // ── 새 예비 스케줄 만들기 ──
+      // 현재 스케줄을 deep copy해서 초기화 (참조 공유 방지)
+      for (const stu of students) {
+        const existing = schedules.find(s => s.student_id === stu.id)
+        initialItems[stu.id] = {
+          seat_number:     existing?.seat_number ?? stu.seat_number ?? '',
+          membership_type: existing?.membership_type || '풀',
+          mon_slots: [...(existing?.mon_slots || [])], tue_slots: [...(existing?.tue_slots || [])],
+          wed_slots: [...(existing?.wed_slots || [])], thu_slots: [...(existing?.thu_slots || [])],
+          fri_slots: [...(existing?.fri_slots || [])], sat_slots: [...(existing?.sat_slots || [])],
+          sun_slots: [...(existing?.sun_slots || [])],
         }
       }
     }
@@ -528,10 +535,10 @@ export default function ScheduleManagement() {
           student_id:      stu.id,
           seat_number:     item.seat_number || stu.seat_number || null,
           membership_type: item.membership_type || '풀',
-          mon_slots: item.mon_slots || [], tue_slots: item.tue_slots || [],
-          wed_slots: item.wed_slots || [], thu_slots: item.thu_slots || [],
-          fri_slots: item.fri_slots || [], sat_slots: item.sat_slots || [],
-          sun_slots: item.sun_slots || [],
+          mon_slots: [...(item.mon_slots || [])], tue_slots: [...(item.tue_slots || [])],
+          wed_slots: [...(item.wed_slots || [])], thu_slots: [...(item.thu_slots || [])],
+          fri_slots: [...(item.fri_slots || [])], sat_slots: [...(item.sat_slots || [])],
+          sun_slots: [...(item.sun_slots || [])],
         }
       })
 
