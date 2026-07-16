@@ -113,7 +113,7 @@ export default function ScheduleManagement() {
     const [{ data: sts }, { data: schs }, { data: bsets }, { data: tsets }, timeCfg] = await Promise.all([
       supabase.from('students').select('*').eq('status', '재원생').order('name'),
       supabase.from('schedules').select('*'),
-      // 예비 스케줄: trashed_at이 null인 것만 (휴지통 아닌 것)
+      // 예비 스케줄: trashed_at이 null인 것만
       supabase.from('schedule_sets').select('*').is('trashed_at', null).order('created_at', { ascending: false }),
       // 휴지통: trashed_at이 있는 것
       supabase.from('schedule_sets').select('*').not('trashed_at', 'is', null).order('trashed_at', { ascending: false }),
@@ -131,7 +131,6 @@ export default function ScheduleManagement() {
       await supabase.from('schedule_set_items').delete().eq('set_id', old.id)
       await supabase.from('schedule_sets').delete().eq('id', old.id)
     }
-    // 자동 삭제 후 남은 항목만 세팅
     setTrashSets((tsets || []).filter(t => !toAutoDelete.find(d => d.id === t.id)))
 
     if (timeCfg) {
@@ -319,31 +318,23 @@ export default function ScheduleManagement() {
     if (!window.confirm(`"${setName}" 예비 스케줄을 불러올까요?\n현재 스케줄이 이 내용으로 교체되며, 현재 스케줄은 자동으로 휴지통에 백업됩니다.${slotMsg}`)) return
     setBackupLoading(true)
     try {
-      // ① 현재 스케줄을 휴지통에 스냅샷으로 저장 (복원 가능하도록)
+      // ① 현재 스케줄을 휴지통에 스냅샷으로 저장
       if (schedules.length > 0) {
         const snapName = `[자동백업] ${new Date().toLocaleDateString('ko-KR', { year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit' })} 불러오기 전`
         const { data: snapSet, error: snapErr } = await supabase
           .from('schedule_sets')
-          .insert({
-            name: snapName,
-            slots_config: slotConfig,
-            trashed_at: new Date().toISOString(),
-          })
+          .insert({ name: snapName, slots_config: slotConfig, trashed_at: new Date().toISOString() })
           .select().single()
         if (!snapErr && snapSet) {
           const snapItems = schedules.map(s => ({
-            set_id:          snapSet.id,
-            student_id:      s.student_id,
-            seat_number:     s.seat_number,
+            set_id: snapSet.id, student_id: s.student_id, seat_number: s.seat_number,
             membership_type: s.membership_type,
             mon_slots: s.mon_slots || [], tue_slots: s.tue_slots || [],
             wed_slots: s.wed_slots || [], thu_slots: s.thu_slots || [],
             fri_slots: s.fri_slots || [], sat_slots: s.sat_slots || [],
             sun_slots: s.sun_slots || [],
           }))
-          if (snapItems.length > 0) {
-            await supabase.from('schedule_set_items').insert(snapItems)
-          }
+          if (snapItems.length > 0) await supabase.from('schedule_set_items').insert(snapItems)
         }
       }
 
@@ -351,7 +342,6 @@ export default function ScheduleManagement() {
       const { data: items, error } = await supabase
         .from('schedule_set_items').select('*').eq('set_id', setId)
       if (error) throw error
-
       for (const item of items) {
         const existing = schedules.find(s => s.student_id === item.student_id)
         const payload = {
@@ -370,7 +360,7 @@ export default function ScheduleManagement() {
         }
       }
 
-      // ③ 교시수도 함께 적용 (예비스케줄에 저장된 slots_config가 있을 때만)
+      // ③ 교시수 함께 적용
       if (slotsConfig) {
         const newConfig = { ...DEFAULT_SLOT_CONFIG, ...slotsConfig }
         setSlotConfig(newConfig)
@@ -1147,9 +1137,7 @@ export default function ScheduleManagement() {
             }}>
               <span style={{ fontSize:'20px' }}>🗑️</span>
               <div>
-                <p style={{ fontSize:'13px', fontWeight:700, color:'#92400E', margin:0 }}>
-                  스케줄 휴지통
-                </p>
+                <p style={{ fontSize:'13px', fontWeight:700, color:'#92400E', margin:0 }}>스케줄 휴지통</p>
                 <p style={{ fontSize:'12px', color:'#B45309', margin:'3px 0 0' }}>
                   예비 스케줄을 삭제하거나 "불러오기"를 쓸 때 여기에 자동 저장돼요.
                   복원하면 <strong>예비 스케줄 관리</strong>로 되돌아가요.
@@ -1159,10 +1147,7 @@ export default function ScheduleManagement() {
             </div>
 
             {trashSets.length === 0 ? (
-              <div style={{
-                textAlign:'center', padding:'64px',
-                background:'#fff', borderRadius:'16px', border:'1px solid #E2E8F0',
-              }}>
+              <div style={{ textAlign:'center', padding:'64px', background:'#fff', borderRadius:'16px', border:'1px solid #E2E8F0' }}>
                 <p style={{ fontSize:'40px', marginBottom:'12px' }}>🗑️</p>
                 <p style={{ fontWeight:600, color:'#64748B', fontSize:'15px' }}>휴지통이 비어있어요</p>
                 <p style={{ fontSize:'13px', color:'#94A3B8', marginTop:'4px' }}>
@@ -1172,12 +1157,10 @@ export default function ScheduleManagement() {
             ) : (
               <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
                 {trashSets.map(tset => {
-                  // 남은 일수 계산
                   const trashedAt = new Date(tset.trashed_at)
                   const expireAt  = new Date(trashedAt.getTime() + 60 * 24 * 60 * 60 * 1000)
                   const daysLeft  = Math.ceil((expireAt - new Date()) / (24 * 60 * 60 * 1000))
                   const isWarning = daysLeft <= 7
-
                   return (
                     <div key={tset.id} style={{
                       display:'flex', alignItems:'center', justifyContent:'space-between',
@@ -1197,8 +1180,7 @@ export default function ScheduleManagement() {
                         </div>
                         <p style={{ fontSize:'12px', color:'#94A3B8', margin:0 }}>
                           삭제일: {trashedAt.toLocaleDateString('ko-KR', {
-                            year:'numeric', month:'long', day:'numeric',
-                            hour:'2-digit', minute:'2-digit',
+                            year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit',
                           })}
                           {' · '}
                           <span style={{ color: isWarning ? '#C2410C' : '#94A3B8' }}>
@@ -1805,4 +1787,183 @@ export default function ScheduleManagement() {
                             style={{
                               width:'20px', height:'20px', borderRadius:'4px', border:'none',
                               background:'rgba(255,255,255,0.08)', color:'#94A3B8',
-                              fontSize:'14px', cursor:'pointer', li
+                              fontSize:'14px', cursor:'pointer', lineHeight:1,
+                              display:'flex', alignItems:'center', justifyContent:'center',
+                            }}>-</button>
+                          <span style={{ fontSize:'13px', fontWeight:700, color:day.color, minWidth:'20px', textAlign:'center' }}>
+                            {day.slots}
+                          </span>
+                          <button
+                            onClick={() => setBackupDaySlots(p => ({ ...p, [day.cfgKey]: Math.min(20, (p[day.cfgKey]||5)+1) }))}
+                            style={{
+                              width:'20px', height:'20px', borderRadius:'4px', border:'none',
+                              background:'rgba(255,255,255,0.08)', color:'#94A3B8',
+                              fontSize:'14px', cursor:'pointer', lineHeight:1,
+                              display:'flex', alignItems:'center', justifyContent:'center',
+                            }}>+</button>
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+
+                {/* 데이터 행 */}
+                <tbody>
+                  {students.length === 0 ? (
+                    <tr>
+                      <td colSpan={dayConfig.length + 2} style={{ textAlign:'center', padding:'60px', color:'#475569', fontSize:'14px' }}>
+                        등록된 재원생이 없어요
+                      </td>
+                    </tr>
+                  ) : students.map((stu, idx) => {
+                    const item = backupEditItems[stu.id] || {}
+                    const memType = item.membership_type || '풀'
+                    const isEven = idx % 2 === 0
+                    const rowBg = isEven ? '#1A2035' : '#161C2E'
+                    return (
+                      <tr key={stu.id}>
+                        {/* 학생 정보 (고정 열) */}
+                        <td style={{
+                          position:'sticky', left:0, zIndex:10,
+                          background: rowBg,
+                          padding:'10px 20px',
+                          borderRight:'1px solid rgba(255,255,255,0.08)',
+                          borderBottom:'1px solid rgba(255,255,255,0.04)',
+                          verticalAlign:'middle',
+                          whiteSpace:'nowrap',
+                        }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                            <div style={{
+                              width:'30px', height:'30px', borderRadius:'8px', flexShrink:0,
+                              background:'linear-gradient(135deg,#6366F1,#7C3AED)',
+                              display:'flex', alignItems:'center', justifyContent:'center',
+                              color:'#fff', fontSize:'12px', fontWeight:700,
+                            }}>{stu.name.slice(0,1)}</div>
+                            <div>
+                              <p style={{ fontSize:'13px', fontWeight:700, color:'#E2E8F0', margin:0 }}>{stu.name}</p>
+                              {stu.grade && (
+                                <p style={{ fontSize:'11px', color:'#475569', margin:'2px 0 0' }}>{stu.grade}</p>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* 재원구분 */}
+                        <td style={{
+                          background: rowBg,
+                          padding:'10px 12px',
+                          borderRight:'1px solid rgba(255,255,255,0.08)',
+                          borderBottom:'1px solid rgba(255,255,255,0.04)',
+                          verticalAlign:'middle', textAlign:'center',
+                        }}>
+                          <div style={{ display:'flex', flexDirection:'column', gap:'3px', alignItems:'center' }}>
+                            {['풀','평일','주말'].map(type => (
+                              <button key={type} type="button"
+                                onClick={() => setBackupEditItems(prev => ({
+                                  ...prev,
+                                  [stu.id]: { ...(prev[stu.id] || {}), membership_type: type }
+                                }))}
+                                style={{
+                                  padding:'3px 10px', borderRadius:'5px', width:'52px',
+                                  fontSize:'11px', fontWeight:700, cursor:'pointer',
+                                  border: memType === type ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                                  background: memType === type
+                                    ? (type === '풀' ? '#059669' : type === '평일' ? '#6366F1' : '#D97706')
+                                    : 'rgba(255,255,255,0.04)',
+                                  color: memType === type ? '#fff' : '#475569',
+                                  transition:'all 0.1s',
+                                }}
+                              >{type}</button>
+                            ))}
+                          </div>
+                        </td>
+
+                        {/* 요일별 교시 버튼 */}
+                        {backupDayConfig.map(day => {
+                          const avail = isDayAvailable(memType, day.type)
+                          const cur   = item[day.key] || []
+                          const allSel = cur.length === day.slots && day.slots > 0
+                          return (
+                            <td key={day.key} style={{
+                              background: avail ? rowBg : (isEven ? '#141824' : '#111520'),
+                              padding:'8px 14px',
+                              borderRight:'1px solid rgba(255,255,255,0.04)',
+                              borderBottom:'1px solid rgba(255,255,255,0.04)',
+                              verticalAlign:'middle',
+                            }}>
+                              {avail ? (
+                                <div>
+                                  {/* 선택 현황 + 전체 버튼 */}
+                                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'5px' }}>
+                                    <span style={{
+                                      fontSize:'10px', fontWeight:700,
+                                      color: cur.length > 0 ? day.color : '#334155',
+                                    }}>
+                                      {cur.length > 0 ? `${cur.length}교시` : '없음'}
+                                    </span>
+                                    <button type="button"
+                                      onClick={() => toggleBackupAllDay(stu.id, day.key, day.slots)}
+                                      style={{
+                                        fontSize:'10px', fontWeight:700, cursor:'pointer',
+                                        padding:'2px 6px', borderRadius:'4px',
+                                        border:'none',
+                                        background: allSel ? day.color : 'rgba(255,255,255,0.08)',
+                                        color: allSel ? '#fff' : '#64748B',
+                                        transition:'all 0.1s',
+                                      }}
+                                    >{allSel ? '전해제' : '전체'}</button>
+                                  </div>
+                                  {/* 교시 버튼 */}
+                                  <div style={{ display:'flex', flexWrap:'wrap', gap:'3px' }}>
+                                    {Array.from({ length: day.slots }, (_, i) => {
+                                      const n = i + 1
+                                      const on = cur.includes(n)
+                                      return (
+                                        <button key={n} type="button"
+                                          onClick={() => toggleBackupSlot(stu.id, day.key, n)}
+                                          style={{
+                                            width:'26px', height:'26px', borderRadius:'6px',
+                                            border: on ? 'none' : '1px solid rgba(255,255,255,0.1)',
+                                            cursor:'pointer', fontSize:'11px', fontWeight:700,
+                                            background: on ? day.color : 'rgba(255,255,255,0.05)',
+                                            color: on ? '#fff' : '#334155',
+                                            boxShadow: on ? `0 2px 6px ${day.color}60` : 'none',
+                                            transition:'all 0.1s',
+                                          }}
+                                        >{n}</button>
+                                      )
+                                    })}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{ textAlign:'center', color:'#1E293B', fontSize:'13px', userSelect:'none' }}>—</div>
+                              )}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* -- 토스트 -- */}
+      {toast && (
+        <div style={{
+          position:'fixed', bottom:'24px', right:'24px', zIndex:100,
+          display:'flex', alignItems:'center', gap:'10px',
+          padding:'12px 18px', borderRadius:'14px',
+          background: toast.type === 'error' ? '#EF4444' : '#10B981',
+          color:'#fff', fontSize:'13px', fontWeight:600,
+          boxShadow:'0 8px 24px rgba(0,0,0,0.12)',
+        }}>
+          {toast.msg}
+        </div>
+      )}
+    </Layout>
+  )
+}

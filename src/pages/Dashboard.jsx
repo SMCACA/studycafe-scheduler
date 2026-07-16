@@ -475,4 +475,13 @@ function StatusDonutChart({ data, total }) {
           />
         )
       })}
-      {/* 가운데 전체 인원수 텍
+      {/* 가운데 전체 인원수 텍스트 */}
+      <text x="50%" y="48%" textAnchor="middle" fontSize="22" fontWeight="800" fill="#0F172A">
+        {total}
+      </text>
+      <text x="50%" y="64%" textAnchor="middle" fontSize="11" fontWeight="600" fill="#94A3B8">
+        재원생
+      </text>
+    </svg>
+  )
+}

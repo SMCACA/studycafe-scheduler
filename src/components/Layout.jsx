@@ -116,6 +116,7 @@ export default function Layout({ children }) {
     setIsEditingBranch(false)
   }
 
+
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100vh', width:'100vw', overflow:'hidden' }}>
 
@@ -292,4 +293,80 @@ export default function Layout({ children }) {
                     </NavLink>
 
                     {isParent && (
-                      <div styl
+                      <div style={{
+                        marginLeft:'20px', marginTop:'2px', marginBottom:'4px',
+                        paddingLeft:'14px', borderLeft:'1px solid rgba(255,255,255,0.08)',
+                        display:'flex', flexDirection:'column', gap:'1px',
+                      }}>
+                        {item.children.map(child => {
+                          const C = child.icon
+                          const isCActive = location.pathname === child.path
+                          return (
+                            <NavLink
+                              key={child.path} to={child.path} isActive={isCActive}
+                              style={{
+                                display:'flex', alignItems:'center', gap:'9px',
+                                padding:'9px 12px', borderRadius:'10px',
+                                fontSize:'13px', fontWeight: isCActive ? 600 : 400,
+                                textDecoration:'none', transition:'all 0.15s',
+                                color: isCActive ? '#A5B4FC' : '#64748B',
+                                background: isCActive ? 'rgba(99,102,241,0.12)' : 'transparent',
+                              }}
+                            >
+                              <C size={14} />
+                              {child.label}
+                            </NavLink>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              }
+
+              return (
+                <NavLink
+                  key={item.path} to={item.path} isActive={isActive}
+                  style={{
+                    position:'relative', display:'flex', alignItems:'center',
+                    gap:'12px', padding:'11px 14px', borderRadius:'12px',
+                    fontSize:'14px', fontWeight:500, textDecoration:'none',
+                    transition:'all 0.15s',
+                  }}
+                >
+                  {isActive && <span style={{
+                    position:'absolute', left:0, top:'50%', transform:'translateY(-50%)',
+                    width:'3px', height:'24px', background:'#818CF8', borderRadius:'0 4px 4px 0',
+                  }} />}
+                  <item.icon size={18} strokeWidth={isActive ? 2.2 : 1.8} />
+                  <span>{item.label}</span>
+                </NavLink>
+              )
+            })}
+          </nav>
+
+          <div style={{ padding:'12px', flexShrink:0, borderTop:'1px solid rgba(255,255,255,0.07)' }}>
+            <button
+              onClick={async () => { await supabase.auth.signOut(); navigate('/login') }}
+              style={{
+                width:'100%', display:'flex', alignItems:'center', gap:'12px',
+                padding:'11px 14px', borderRadius:'12px', fontSize:'14px',
+                color:'#475569', background:'transparent', border:'none', cursor:'pointer',
+                transition:'all 0.15s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color='#FCA5A5'; e.currentTarget.style.background='rgba(239,68,68,0.1)' }}
+              onMouseLeave={e => { e.currentTarget.style.color='#475569'; e.currentTarget.style.background='transparent' }}
+            >
+              <LogOut size={18} strokeWidth={1.8} />
+              <span>로그아웃</span>
+            </button>
+          </div>
+        </aside>
+
+        <main style={{ flex:1, overflow:'auto', background:'#F8FAFC' }}>
+          {children}
+        </main>
+      </div>
+    </div>
+  )
+}
