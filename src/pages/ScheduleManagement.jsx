@@ -211,7 +211,7 @@ export default function ScheduleManagement() {
 
   const handleSave = async () => {
     const payload = {
-      student_id: form.student_id, seat_number: form.seat_number,
+      student_id: form.student_id, seat_number: form.seat_number || null,
       membership_type: form.membership_type,
       mon_slots: form.mon_slots, tue_slots: form.tue_slots,
       wed_slots: form.wed_slots, thu_slots: form.thu_slots,
@@ -293,7 +293,7 @@ export default function ScheduleManagement() {
       const items = schedules.map(s => ({
         set_id:          setData.id,
         student_id:      s.student_id,
-        seat_number:     s.seat_number,
+        seat_number:     s.seat_number || null,
         membership_type: s.membership_type,
         mon_slots: [...(s.mon_slots || [])], tue_slots: [...(s.tue_slots || [])],
         wed_slots: [...(s.wed_slots || [])], thu_slots: [...(s.thu_slots || [])],
@@ -327,7 +327,7 @@ export default function ScheduleManagement() {
           .select().single()
         if (!snapErr && snapSet) {
           const snapItems = schedules.map(s => ({
-            set_id: snapSet.id, student_id: s.student_id, seat_number: s.seat_number,
+            set_id: snapSet.id, student_id: s.student_id, seat_number: s.seat_number || null,
             membership_type: s.membership_type,
             mon_slots: [...(s.mon_slots || [])], tue_slots: [...(s.tue_slots || [])],
             wed_slots: [...(s.wed_slots || [])], thu_slots: [...(s.thu_slots || [])],
@@ -346,7 +346,7 @@ export default function ScheduleManagement() {
         const existing = schedules.find(s => s.student_id === item.student_id)
         const payload = {
           student_id:      item.student_id,
-          seat_number:     item.seat_number,
+          seat_number:     item.seat_number || null,
           membership_type: item.membership_type,
           mon_slots: [...(item.mon_slots || [])], tue_slots: [...(item.tue_slots || [])],
           wed_slots: [...(item.wed_slots || [])], thu_slots: [...(item.thu_slots || [])],
