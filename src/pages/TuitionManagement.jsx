@@ -102,6 +102,14 @@ export default function TuitionManagement() {
   const [loading,        setLoading]        = useState(false)
   const [saving,         setSaving]         = useState(false)
 
+  // 정렬 상태 (비유: 열 제목을 클릭하면 그 열 기준으로 줄을 세워줌)
+  const [sortKey, setSortKey]   = useState(null)   // 어떤 열로 정렬할지
+  const [sortDir, setSortDir]   = useState('asc')  // 'asc'=오름차순, 'desc'=내림차순
+
+  // 이번 달 수강료 일괄 설정 패널
+  const [showBulkMonthly, setShowBulkMonthly] = useState(false)
+  const [bulkAmount,       setBulkAmount]      = useState('')
+
   // 데이터 불러오기
   useEffect(() => { fetchAll() }, [selectedYear, selectedMonth])
 
@@ -344,6 +352,36 @@ export default function TuitionManagement() {
     setSaving(false)
   }
 
+  // 이번 달 수강료 일괄 설정 (특정 금액으로 전체 덮어쓰기)
+  const bulkSetMonthlyFee = async () => {
+    if (bulkAmount === '') { showToast('금액을 입력해주세요', 'error'); return }
+    const amt = Number(bulkAmount)
+    if (!window.confirm(
+      `${selectedYear}년 ${selectedMonth}월 수강료를\n모든 학생에게 ${formatKRW(amt)}로 일괄 설정할까요?\n\n이후 [기본료로 일괄 설정] 버튼으로 다시 되돌릴 수 있어요.`
+    )) return
+    setSaving(true)
+    try {
+      const toUpsert = students.map(s => ({
+        student_id: s.id,
+        year: selectedYear,
+        month: selectedMonth,
+        amount: amt,
+        notes: getMonthlyFee(s.id)?.notes || getBaseFee(s.id)?.notes || '',
+        updated_at: new Date().toISOString(),
+      }))
+      const { error } = await supabase.from('student_tuition')
+        .upsert(toUpsert, { onConflict: 'student_id,year,month' })
+      if (error) throw error
+      showToast(`${toUpsert.length}명의 ${selectedMonth}월 수강료가 ${formatKRW(amt)}로 설정됐어요 ✅`)
+      setShowBulkMonthly(false)
+      setBulkAmount('')
+      await fetchAll()
+    } catch (err) {
+      showToast('일괄 설정 실패: ' + err.message, 'error')
+    }
+    setSaving(false)
+  }
+
   // 행별 표준 이용료 1건 적용
   const applyStandardRateForOne = async (student) => {
     const sch = getSchedule(student.id)
@@ -362,6 +400,43 @@ export default function TuitionManagement() {
     if (selectedMonth === 12) { setSelectedYear(y => y + 1); setSelectedMonth(1) }
     else setSelectedMonth(m => m + 1)
   }
+
+  // 정렬 핸들러
+  const handleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('asc') }
+  }
+
+  // 정렬된 학생 목록
+  const sortedStudents = useMemo(() => {
+    if (!sortKey) return students
+    const GRADE_ORDER = { '중1': 1, '중2': 2, '중3': 3, '고1': 4, '고2': 5, '고3': 6 }
+    const MEM_ORDER   = { '풀': 1, '평일': 2, '주말': 3 }
+    return [...students].sort((a, b) => {
+      let av, bv
+      switch (sortKey) {
+        case 'name':
+          av = a.name || ''; bv = b.name || ''
+          return sortDir === 'asc' ? av.localeCompare(bv, 'ko') : bv.localeCompare(av, 'ko')
+        case 'seat':
+          av = Number(a.seat_number) || 9999; bv = Number(b.seat_number) || 9999; break
+        case 'grade':
+          av = GRADE_ORDER[a.grade] ?? 99; bv = GRADE_ORDER[b.grade] ?? 99; break
+        case 'membership': {
+          const as = getSchedule(a.id); const bs = getSchedule(b.id)
+          av = MEM_ORDER[as?.membership_type] ?? 99; bv = MEM_ORDER[bs?.membership_type] ?? 99; break
+        }
+        case 'academy':
+          av = a.is_academy_student ? 0 : 1; bv = b.is_academy_student ? 0 : 1; break
+        case 'base':
+          av = getBaseFee(a.id)?.amount ?? -1; bv = getBaseFee(b.id)?.amount ?? -1; break
+        case 'monthly':
+          av = getEffectiveAmount(a.id).amount ?? -1; bv = getEffectiveAmount(b.id).amount ?? -1; break
+        default: return 0
+      }
+      return sortDir === 'asc' ? av - bv : bv - av
+    })
+  }, [students, sortKey, sortDir, schedules, baseFees, monthlyFees])
 
   // 총 수납 예정액 (이번 달)
   const totalThisMonth = useMemo(() => {
@@ -404,6 +479,18 @@ export default function TuitionManagement() {
               <BookOpen size={14} /> 표준 이용료
             </button>
             <button
+              onClick={() => setShowBulkMonthly(v => !v)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '9px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
+                border: showBulkMonthly ? '1.5px solid #0EA5E9' : '1.5px solid #E2E8F0',
+                background: showBulkMonthly ? '#EFF8FF' : '#F8FAFC',
+                color: showBulkMonthly ? '#0369A1' : '#64748B', cursor: 'pointer',
+              }}
+            >
+              <Edit2 size={14} /> 이번 달 일괄 설정
+            </button>
+            <button
               onClick={autoApplyStandardRates}
               disabled={saving}
               style={{
@@ -429,6 +516,57 @@ export default function TuitionManagement() {
             </button>
           </div>
         </div>
+
+        {/* ── 이번 달 일괄 설정 패널 ── */}
+        {showBulkMonthly && (
+          <div style={{
+            background: '#EFF8FF', borderRadius: '14px', border: '1.5px solid #BAE6FD',
+            padding: '16px 20px', marginBottom: '16px',
+            display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap',
+          }}>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: '#0369A1', whiteSpace: 'nowrap' }}>
+              {selectedYear}년 {selectedMonth}월 전체 학생 일괄 설정
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, flexWrap: 'wrap' }}>
+              <input
+                type="number"
+                value={bulkAmount}
+                onChange={e => setBulkAmount(e.target.value)}
+                placeholder="금액 입력 (예: 0)"
+                style={{
+                  padding: '8px 12px', borderRadius: '9px', border: '1.5px solid #7DD3FC',
+                  fontSize: '14px', outline: 'none', width: '160px', fontWeight: 600,
+                }}
+                onKeyDown={e => e.key === 'Enter' && bulkSetMonthlyFee()}
+              />
+              <span style={{ fontSize: '12px', color: '#0369A1' }}>
+                {bulkAmount !== '' ? `→ ${formatKRW(Number(bulkAmount))}` : '원'}
+              </span>
+              <button
+                onClick={bulkSetMonthlyFee}
+                disabled={saving}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '5px',
+                  padding: '8px 16px', borderRadius: '9px', border: 'none',
+                  background: '#0EA5E9', color: '#fff', fontSize: '13px', fontWeight: 700,
+                  cursor: saving ? 'not-allowed' : 'pointer',
+                }}
+              >
+                <Check size={13} /> 전체 적용
+              </button>
+              <button
+                onClick={() => { setShowBulkMonthly(false); setBulkAmount('') }}
+                style={{
+                  padding: '8px 12px', borderRadius: '9px', border: '1px solid #BAE6FD',
+                  background: '#fff', color: '#64748B', fontSize: '12px', cursor: 'pointer',
+                }}
+              >취소</button>
+            </div>
+            <p style={{ fontSize: '11px', color: '#0369A1', margin: 0, width: '100%' }}>
+              💡 적용 후 [기본료로 일괄 설정] 버튼을 누르면 고정 수강료로 되돌릴 수 있어요.
+            </p>
+          </div>
+        )}
 
         {/* ── 표준 이용료 패널 (접을 수 있음) ── */}
         {showStdRates && (
@@ -603,27 +741,48 @@ export default function TuitionManagement() {
               <thead>
                 <tr>
                   {[
-                    { label: '이름', width: '90px' },
-                    { label: '좌석', width: '54px' },
-                    { label: '학년', width: '60px' },
-                    { label: '이용권', width: '80px' },
-                    { label: 'SMC 구분', width: '90px' },
-                    { label: '고정 수강료', width: '130px', tip: '매달 기본으로 적용되는 금액' },
-                    { label: `${selectedMonth}월 수강료`, width: '160px', tip: '이번 달만 적용 (없으면 고정 수강료 사용)' },
-                    { label: '비고', width: '100px' },
-                  ].map(h => (
-                    <th key={h.label} style={{
-                      padding: '11px 14px', background: '#F8FAFC',
-                      fontSize: '11px', fontWeight: 700, color: '#64748B',
-                      letterSpacing: '0.04em', textAlign: 'left',
-                      border: '1px solid #E2E8F0', whiteSpace: 'nowrap',
-                      width: h.width || 'auto',
-                    }} title={h.tip || ''}>{h.label}</th>
-                  ))}
+                    { label: '이름',              width: '90px',  sortKey: 'name' },
+                    { label: '좌석',              width: '54px',  sortKey: 'seat' },
+                    { label: '학년',              width: '60px',  sortKey: 'grade' },
+                    { label: '이용권',            width: '80px',  sortKey: 'membership' },
+                    { label: 'SMC 구분',          width: '90px',  sortKey: 'academy' },
+                    { label: '고정 수강료',       width: '130px', sortKey: 'base',    tip: '매달 기본으로 적용되는 금액' },
+                    { label: `${selectedMonth}월 수강료`, width: '160px', sortKey: 'monthly', tip: '이번 달만 적용 (없으면 고정 수강료 사용)' },
+                    { label: '비고',              width: '100px', sortKey: null },
+                  ].map(h => {
+                    const isActive = sortKey === h.sortKey && h.sortKey !== null
+                    return (
+                      <th
+                        key={h.label}
+                        onClick={() => h.sortKey && handleSort(h.sortKey)}
+                        style={{
+                          padding: '11px 14px',
+                          background: isActive ? '#EEF2FF' : '#F8FAFC',
+                          fontSize: '11px', fontWeight: 700,
+                          color: isActive ? '#4F46E5' : '#64748B',
+                          letterSpacing: '0.04em', textAlign: 'left',
+                          border: '1px solid #E2E8F0', whiteSpace: 'nowrap',
+                          width: h.width || 'auto',
+                          cursor: h.sortKey ? 'pointer' : 'default',
+                          userSelect: 'none',
+                        }}
+                        title={h.tip || (h.sortKey ? '클릭해서 정렬' : '')}
+                      >
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          {h.label}
+                          {h.sortKey && (
+                            <span style={{ fontSize: '10px', color: isActive ? '#4F46E5' : '#CBD5E1' }}>
+                              {isActive ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+                            </span>
+                          )}
+                        </span>
+                      </th>
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody>
-                {students.map((student, idx) => {
+                {sortedStudents.map((student, idx) => {
                   const sch     = getSchedule(student.id)
                   const baseFee = getBaseFee(student.id)
                   const monthly = getMonthlyFee(student.id)
