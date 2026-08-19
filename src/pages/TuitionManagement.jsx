@@ -306,6 +306,53 @@ export default function TuitionManagement() {
     setSaving(false)
   }
 
+  // 표준 이용료 → 고정 수강료 일괄 자동 적용
+  // (이미 고정 수강료가 설정된 학생은 건너뜀)
+  const autoApplyStandardRates = async () => {
+    if (!window.confirm(
+      '표준 이용료를 각 학생의 이용권·SMC 조건에 맞게\n고정 수강료로 자동 적용할까요?\n(이미 고정 수강료가 설정된 학생은 건너뜁니다)'
+    )) return
+    setSaving(true)
+    try {
+      const toUpsert = []
+      for (const student of students) {
+        if (getBaseFee(student.id)) continue          // 이미 기본료 있으면 스킵
+        const sch = getSchedule(student.id)
+        if (!sch?.membership_type) continue           // 이용권 없으면 스킵
+        const rate = getStandardRate(sch.membership_type, !!student.is_academy_student)
+        if (!rate || rate.amount == null) continue    // 표준 이용료 없으면 스킵
+        toUpsert.push({
+          student_id: student.id,
+          year: 0, month: 0,
+          amount: rate.amount,
+          notes: '',
+        })
+      }
+      if (toUpsert.length === 0) {
+        showToast('적용할 학생이 없어요 (이미 모두 설정됨 또는 이용권 미설정)', 'success')
+        setSaving(false)
+        return
+      }
+      const { error } = await supabase.from('student_tuition')
+        .upsert(toUpsert, { onConflict: 'student_id,year,month' })
+      if (error) throw error
+      showToast(`${toUpsert.length}명의 고정 수강료가 자동 적용됐어요 ✨`)
+      await fetchAll()
+    } catch (err) {
+      showToast('자동 적용 실패: ' + err.message, 'error')
+    }
+    setSaving(false)
+  }
+
+  // 행별 표준 이용료 1건 적용
+  const applyStandardRateForOne = async (student) => {
+    const sch = getSchedule(student.id)
+    if (!sch?.membership_type) { showToast('이용권이 설정되지 않은 학생이에요', 'error'); return }
+    const rate = getStandardRate(sch.membership_type, !!student.is_academy_student)
+    if (!rate || rate.amount == null) { showToast('표준 이용료가 설정되지 않았어요', 'error'); return }
+    await saveBaseFee(student.id, rate.amount, getBaseFee(student.id)?.notes || '')
+  }
+
   // 월 이동
   const prevMonth = () => {
     if (selectedMonth === 1) { setSelectedYear(y => y - 1); setSelectedMonth(12) }
@@ -355,6 +402,18 @@ export default function TuitionManagement() {
               }}
             >
               <BookOpen size={14} /> 표준 이용료
+            </button>
+            <button
+              onClick={autoApplyStandardRates}
+              disabled={saving}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '9px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
+                border: '1.5px solid #C7D2FE', background: '#EEF2FF',
+                color: '#4F46E5', cursor: saving ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <Plus size={14} /> 표준 이용료 자동 적용
             </button>
             <button
               onClick={initMonthFromBase}
@@ -551,7 +610,7 @@ export default function TuitionManagement() {
                     { label: 'SMC 구분', width: '90px' },
                     { label: '고정 수강료', width: '130px', tip: '매달 기본으로 적용되는 금액' },
                     { label: `${selectedMonth}월 수강료`, width: '160px', tip: '이번 달만 적용 (없으면 고정 수강료 사용)' },
-                    { label: '비고', width: '' },
+                    { label: '비고', width: '100px' },
                   ].map(h => (
                     <th key={h.label} style={{
                       padding: '11px 14px', background: '#F8FAFC',
@@ -612,6 +671,7 @@ export default function TuitionManagement() {
                             padding: '2px 8px', borderRadius: '999px', fontSize: '11px', fontWeight: 700,
                             background: student.grade?.startsWith('고') ? '#EEF2FF' : '#ECFDF5',
                             color: student.grade?.startsWith('고') ? '#4F46E5' : '#059669',
+                            whiteSpace: 'nowrap',
                           }}>{student.grade}</span>
                         )}
                       </td>
@@ -654,20 +714,38 @@ export default function TuitionManagement() {
                             <button onClick={cancelEdit} style={{ width: '24px', height: '24px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', color: '#94A3B8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={12} /></button>
                           </div>
                         ) : (
-                          <button
-                            onClick={() => startEdit(student.id, 'base', baseFee?.amount, baseFee?.notes)}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: '5px',
-                              padding: '4px 8px', borderRadius: '8px',
-                              border: '1px dashed #CBD5E1', background: baseFee ? '#F8FAFC' : 'transparent',
-                              color: baseFee ? '#0F172A' : '#CBD5E1',
-                              fontSize: '13px', fontWeight: baseFee ? 700 : 400,
-                              cursor: 'pointer', width: '100%', justifyContent: 'space-between',
-                            }}
-                          >
-                            <span>{baseFee ? formatKRW(baseFee.amount) : '클릭해서 입력'}</span>
-                            <Edit2 size={10} style={{ color: '#CBD5E1', flexShrink: 0 }} />
-                          </button>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <button
+                              onClick={() => startEdit(student.id, 'base', baseFee?.amount, baseFee?.notes)}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: '5px',
+                                padding: '4px 8px', borderRadius: '8px',
+                                border: '1px dashed #CBD5E1', background: baseFee ? '#F8FAFC' : 'transparent',
+                                color: baseFee ? '#0F172A' : '#CBD5E1',
+                                fontSize: '13px', fontWeight: baseFee ? 700 : 400,
+                                cursor: 'pointer', width: '100%', justifyContent: 'space-between',
+                              }}
+                            >
+                              <span>{baseFee ? formatKRW(baseFee.amount) : '클릭해서 입력'}</span>
+                              <Edit2 size={10} style={{ color: '#CBD5E1', flexShrink: 0 }} />
+                            </button>
+                            {/* 기본료 없고 표준 이용료 있을 때 자동 적용 버튼 표시 */}
+                            {!baseFee && mType && getStandardRate(mType, !!student.is_academy_student) && (
+                              <button
+                                onClick={() => applyStandardRateForOne(student)}
+                                disabled={saving}
+                                title={`표준 이용료 ${formatKRW(getStandardRate(mType, !!student.is_academy_student)?.amount)} 적용`}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: '3px',
+                                  padding: '2px 7px', borderRadius: '6px', fontSize: '10px', fontWeight: 700,
+                                  border: '1px solid #C7D2FE', background: '#EEF2FF', color: '#4F46E5',
+                                  cursor: saving ? 'not-allowed' : 'pointer', alignSelf: 'flex-start',
+                                }}
+                              >
+                                <Plus size={9} /> 표준 이용료 적용
+                              </button>
+                            )}
+                          </div>
                         )}
                       </td>
 
@@ -729,7 +807,7 @@ export default function TuitionManagement() {
                       </td>
 
                       {/* 비고 */}
-                      <td style={{ padding: '8px 14px', border: '1px solid #E2E8F0', minWidth: '160px' }}>
+                      <td style={{ padding: '8px 14px', border: '1px solid #E2E8F0', width: '100px', maxWidth: '100px' }}>
                         <NoteCell
                           value={monthly?.notes !== undefined ? monthly.notes : (baseFee?.notes || '')}
                           onChange={async (val) => {
@@ -794,8 +872,9 @@ function NoteCell({ value, onChange }) {
         border: local ? '1px solid #E2E8F0' : '1px dashed #CBD5E1',
         background: 'transparent', cursor: 'pointer',
         fontSize: '12px', color: local ? '#374151' : '#CBD5E1',
-        lineHeight: 1.5,
+        lineHeight: 1.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       }}
+      title={local || ''}
     >
       {local || '비고 입력…'}
     </button>
