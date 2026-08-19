@@ -18,6 +18,7 @@ const CATEGORIES = [
   { value: 'exam',      label: '시험',    color: '#EF4444', bg: '#FEF2F2', border: '#FECACA' },
   { value: 'event',     label: '행사',    color: '#10B981', bg: '#ECFDF5', border: '#A7F3D0' },
   { value: 'holiday',   label: '공휴일',  color: '#8B5CF6', bg: '#F5F3FF', border: '#DDD6FE' },
+  { value: 'work',      label: '업무',    color: '#0EA5E9', bg: '#EFF8FF', border: '#BAE6FD' },
   { value: 'other',     label: '기타',    color: '#64748B', bg: '#F8FAFC', border: '#E2E8F0' },
 ]
 
@@ -72,8 +73,27 @@ const buildCalendarGrid = (year, month) => {
   return days
 }
 
+// 10분 단위 시간 옵션 생성 (00:00 ~ 23:50)
+const TIME_OPTIONS = (() => {
+  const opts = [{ value: '', label: '시간 없음' }]
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 10) {
+      const hh = String(h).padStart(2, '0')
+      const mm = String(m).padStart(2, '0')
+      const val = `${hh}:${mm}`
+      // 표시할 때는 12시간제 AM/PM 형식으로 (예: 오전 9:00, 오후 2:30)
+      const period = h < 12 ? '오전' : '오후'
+      const h12    = h % 12 === 0 ? 12 : h % 12
+      opts.push({ value: val, label: `${period} ${h12}:${mm}` })
+    }
+  }
+  return opts
+})()
+
 const EMPTY_FORM = {
-  title: '', category: 'vacation', start_date: '', end_date: '', description: '', color: ''
+  title: '', category: 'vacation', start_date: '', end_date: '',
+  start_time: '', end_time: '',
+  description: '', color: ''
 }
 
 export default function Calendar() {
@@ -148,6 +168,8 @@ export default function Calendar() {
       category:    evt.category || 'vacation',
       start_date:  evt.start_date || '',
       end_date:    evt.end_date   || '',
+      start_time:  evt.start_time || '',
+      end_time:    evt.end_time   || '',
       description: evt.description || '',
       color:       evt.color || '',
     })
@@ -165,6 +187,8 @@ export default function Calendar() {
       category:    form.category,
       start_date:  form.start_date,
       end_date:    form.end_date,
+      start_time:  form.start_time || null,
+      end_time:    form.end_time   || null,
       description: form.description.trim(),
       color:       form.color || null,
     }
@@ -349,7 +373,7 @@ export default function Calendar() {
             </div>
 
             {/* 요일 헤더 */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', borderBottom: '1px solid #F1F5F9' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', borderBottom: '2px solid #CBD5E1' }}>
               {DAYS_KR.map((d, i) => (
                 <div key={d} style={{
                   textAlign: 'center', padding: '10px 4px', fontSize: '11px', fontWeight: 700,
@@ -373,26 +397,26 @@ export default function Calendar() {
                     key={idx}
                     onClick={() => setSelectedDay(isSelected ? null : ds)}
                     style={{
-                      minHeight: '88px', padding: '6px 6px 4px', cursor: 'pointer',
-                      borderRight: (idx + 1) % 7 === 0 ? 'none' : '1px solid #F1F5F9',
-                      borderBottom: idx < 35 ? '1px solid #F1F5F9' : 'none',
+                      minHeight: '130px', padding: '5px 5px 4px', cursor: 'pointer',
+                      borderRight: (idx + 1) % 7 === 0 ? 'none' : '1px solid #CBD5E1',
+                      borderBottom: idx < 35 ? '1px solid #CBD5E1' : 'none',
                       background: isSelected ? '#EEF2FF' : 'transparent',
                       transition: 'background 0.1s',
                       opacity: cell.currentMonth ? 1 : 0.38,
                     }}
                   >
-                    {/* 날짜 숫자 */}
+                    {/* 날짜 숫자 — 왼쪽 위 정렬 */}
                     {(() => {
                       const holiday = getHolidayName(ds)
                       const isHoliday = !!holiday
                       const numColor = isToday ? '#fff' : (isHoliday || dow === 0) ? '#EF4444' : dow === 6 ? '#3B82F6' : '#0F172A'
                       return (
                         <div style={{ marginBottom: '2px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: holiday ? '2px' : '4px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: holiday ? '1px' : '3px' }}>
                             <span style={{
                               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                              width: '26px', height: '26px', borderRadius: '50%',
-                              fontSize: '13px', fontWeight: isToday ? 800 : 500,
+                              width: '24px', height: '24px', borderRadius: '50%',
+                              fontSize: '12px', fontWeight: isToday ? 800 : 500,
                               background: isToday ? '#6366F1' : 'transparent',
                               color: numColor,
                             }}>
@@ -403,7 +427,7 @@ export default function Calendar() {
                             <div style={{
                               fontSize: '9px', fontWeight: 700, color: '#EF4444',
                               background: '#FEF2F2', borderRadius: '3px',
-                              padding: '1px 4px', textAlign: 'center',
+                              padding: '1px 4px', textAlign: 'left',
                               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                               marginBottom: '2px',
                             }}>
@@ -520,6 +544,11 @@ export default function Calendar() {
                               {evt.start_date === evt.end_date
                                 ? evt.start_date
                                 : `${evt.start_date} ~ ${evt.end_date}`}
+                              {(evt.start_time || evt.end_time) && (
+                                <span style={{ marginLeft: '6px', color: '#6366F1', fontWeight: 600 }}>
+                                  ⏰ {evt.start_time || ''}{evt.start_time && evt.end_time ? ' ~ ' : ''}{evt.end_time || ''}
+                                </span>
+                              )}
                             </p>
                             {evt.description && (
                               <p style={{ fontSize: '12px', color: '#94A3B8', margin: '4px 0 0' }}>{evt.description}</p>
@@ -844,6 +873,43 @@ export default function Calendar() {
                     onFocus={e => { e.target.style.borderColor = '#6366F1' }}
                     onBlur={e => { e.target.style.borderColor = '#E2E8F0' }}
                   />
+                </div>
+              </div>
+
+              {/* 시간 (10분 단위) */}
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', display: 'block', marginBottom: '6px' }}>
+                  ⏰ 시간 (선택) — 10분 단위
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ fontSize: '11px', color: '#94A3B8', display: 'block', marginBottom: '4px' }}>시작 시간</label>
+                    <select
+                      value={form.start_time}
+                      onChange={e => setForm(f => ({ ...f, start_time: e.target.value }))}
+                      style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1.5px solid #E2E8F0', fontSize: '13px', outline: 'none', boxSizing: 'border-box', color: '#0F172A', background: '#F8FAFC', cursor: 'pointer' }}
+                      onFocus={e => { e.target.style.borderColor = '#6366F1' }}
+                      onBlur={e => { e.target.style.borderColor = '#E2E8F0' }}
+                    >
+                      {TIME_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '11px', color: '#94A3B8', display: 'block', marginBottom: '4px' }}>종료 시간</label>
+                    <select
+                      value={form.end_time}
+                      onChange={e => setForm(f => ({ ...f, end_time: e.target.value }))}
+                      style={{ width: '100%', padding: '9px 12px', borderRadius: '10px', border: '1.5px solid #E2E8F0', fontSize: '13px', outline: 'none', boxSizing: 'border-box', color: '#0F172A', background: '#F8FAFC', cursor: 'pointer' }}
+                      onFocus={e => { e.target.style.borderColor = '#6366F1' }}
+                      onBlur={e => { e.target.style.borderColor = '#E2E8F0' }}
+                    >
+                      {TIME_OPTIONS.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
 

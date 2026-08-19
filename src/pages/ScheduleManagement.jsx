@@ -21,6 +21,46 @@ const DAY_KEYS = [
 
 const DEFAULT_SLOT_CONFIG = { mon:5, tue:5, wed:5, thu:5, fri:5, sat:10, sun:10 }
 
+// ────────────────────────────────────────────────────────────
+//  교시 수 설정을 Supabase DB에서 불러오기
+//  (비유: 이전에는 각자 컴퓨터/핸드폰 메모장에 저장했는데,
+//         이제는 공용 클라우드 서버에 저장해서 어느 기기에서도 같은 값이 보여요)
+//
+//  처음 사용 전에 Supabase에서 이 SQL을 실행해주세요:
+//  CREATE TABLE IF NOT EXISTS schedule_slot_config (
+//    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+//    day_key text NOT NULL UNIQUE,   -- 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'
+//    slot_count integer NOT NULL DEFAULT 5,
+//    updated_at timestamptz DEFAULT now()
+//  );
+// ────────────────────────────────────────────────────────────
+async function loadSlotConfigFromDB(supabase) {
+  try {
+    const { data, error } = await supabase
+      .from('schedule_slot_config')
+      .select('day_key, slot_count')
+    if (error || !data || data.length === 0) return { ...DEFAULT_SLOT_CONFIG }
+    const cfg = { ...DEFAULT_SLOT_CONFIG }
+    data.forEach(row => { if (row.day_key in cfg) cfg[row.day_key] = row.slot_count })
+    return cfg
+  } catch {
+    return { ...DEFAULT_SLOT_CONFIG }
+  }
+}
+
+async function saveSlotConfigToDB(supabase, config) {
+  const rows = Object.entries(config).map(([day_key, slot_count]) => ({
+    day_key,
+    slot_count: Number(slot_count),
+    updated_at: new Date().toISOString(),
+  }))
+  const { error } = await supabase
+    .from('schedule_slot_config')
+    .upsert(rows, { onConflict: 'day_key' })
+  if (error) throw error
+}
+
+// localStorage는 초기 렌더 시 깜빡임 방지용으로만 사용 (곧 DB 값으로 덮어씌워짐)
 const loadSlotConfig = () => {
   try {
     const s = localStorage.getItem('smc_slot_config')
@@ -110,7 +150,7 @@ export default function ScheduleManagement() {
 
   const fetchAll = async () => {
     setLoading(true)
-    const [{ data: sts }, { data: schs }, { data: bsets }, { data: tsets }, timeCfg] = await Promise.all([
+    const [{ data: sts }, { data: schs }, { data: bsets }, { data: tsets }, timeCfg, slotCfg] = await Promise.all([
       supabase.from('students').select('*').eq('status', '재원생').order('name'),
       supabase.from('schedules').select('*'),
       // 예비 스케줄: trashed_at이 null인 것만
@@ -118,6 +158,7 @@ export default function ScheduleManagement() {
       // 휴지통: trashed_at이 있는 것
       supabase.from('schedule_sets').select('*').not('trashed_at', 'is', null).order('trashed_at', { ascending: false }),
       loadTimeConfig(supabase),
+      loadSlotConfigFromDB(supabase),
     ])
     if (sts)     setStudents(sts)
     if (schs)    setSchedules(schs)
@@ -139,6 +180,13 @@ export default function ScheduleManagement() {
         weekday: { ...timeCfg.weekday },
         weekend: { ...timeCfg.weekend },
       })
+    }
+    // DB에서 불러온 교시 수 설정 적용
+    if (slotCfg) {
+      setSlotConfig(slotCfg)
+      setTempConfig(slotCfg)
+      // localStorage도 동기화 (오프라인 캐시)
+      localStorage.setItem('smc_slot_config', JSON.stringify(slotCfg))
     }
     setLoading(false)
   }
@@ -240,11 +288,19 @@ export default function ScheduleManagement() {
     fetchAll()
   }
 
-  const saveConfig = () => {
+  const saveConfig = async () => {
     setSlotConfig({ ...tempConfig })
+    // DB에 저장 (모든 기기에서 동일하게 적용됨)
+    try {
+      await saveSlotConfigToDB(supabase, tempConfig)
+    } catch (err) {
+      showToast('교시 설정 DB 저장 실패: ' + err.message, 'error')
+      return
+    }
+    // localStorage도 동기화
     localStorage.setItem('smc_slot_config', JSON.stringify(tempConfig))
     setIsConfigOpen(false)
-    showToast('교시 설정이 저장됐어요 ⚙️')
+    showToast('교시 설정이 저장됐어요 ⚙️ (모든 기기에 적용됩니다)')
   }
 
   const openConfig = () => { setTempConfig({ ...slotConfig }); setIsConfigOpen(true) }
@@ -360,11 +416,12 @@ export default function ScheduleManagement() {
         }
       }
 
-      // ③ 교시수 함께 적용
+      // ③ 교시수 함께 적용 (DB + localStorage 동기화)
       if (slotsConfig) {
         const newConfig = { ...DEFAULT_SLOT_CONFIG, ...slotsConfig }
         setSlotConfig(newConfig)
         setTempConfig(newConfig)
+        try { await saveSlotConfigToDB(supabase, newConfig) } catch {}
         localStorage.setItem('smc_slot_config', JSON.stringify(newConfig))
       }
       showToast(`"${setName}" 불러오기 완료 · 이전 스케줄은 휴지통에 저장됐어요 🗑️`)

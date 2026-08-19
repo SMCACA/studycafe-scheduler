@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import StudentManagement from './pages/StudentManagement'
+import TuitionManagement from './pages/TuitionManagement'
 import ScheduleManagement from './pages/ScheduleManagement'
 import AttendanceManagement from './pages/AttendanceManagement'
 import StudentViewer from './pages/StudentViewer'
@@ -28,6 +29,9 @@ export default function App() {
 
         <Route path="/students" element={
           <ProtectedRoute><StudentManagement /></ProtectedRoute>
+        } />
+        <Route path="/students/tuition" element={
+          <ProtectedRoute><TuitionManagement /></ProtectedRoute>
         } />
 
         <Route path="/schedules" element={
