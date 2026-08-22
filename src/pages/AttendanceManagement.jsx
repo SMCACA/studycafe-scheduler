@@ -211,15 +211,16 @@ export default function AttendanceManagement() {
         exGrouped[att.student_id].push(att)
       }
 
-      for (const [sidStr, atts] of Object.entries(exGrouped)) {
-        const sid = parseInt(sidStr)
+      for (const atts of Object.values(exGrouped)) {
         atts.sort((a, b) => a.period - b.period)
-        const minPeriod = atts[0].period
-        const student = exStudentMap[sid]
+        const minPeriod   = atts[0].period
+        // 원본 student_id 타입 그대로 사용 (parseInt 금지 — UUID 깨짐 방지)
+        const originalId  = atts[0].student_id
+        const student     = exStudentMap[originalId]
 
         finalRows.push({
           scheduleId:   null,
-          studentId:    sid,
+          studentId:    originalId,
           studentName:  student?.name || '알 수 없음',
           seatNumber:   student?.seat_number || null,
           school:       student?.school,
@@ -239,14 +240,17 @@ export default function AttendanceManagement() {
 
   // ── 예외 등원 삭제 ───────────────────────────────────────────
   const deleteExceptionStudent = async (row) => {
-    await supabase
+    // allPeriods 전체 삭제 (period=0 또는 이전 방식의 실제 교시 번호 모두 처리)
+    const { error } = await supabase
       .from('attendance')
       .delete()
       .eq('date', selectedDate)
       .eq('student_id', row.studentId)
-      .eq('period', 0)
+      .in('period', row.allPeriods)
 
-    setRows(prev => prev.filter(r => !(r.studentId === row.studentId && r.isException)))
+    if (!error) {
+      setRows(prev => prev.filter(r => !(r.studentId === row.studentId && r.isException)))
+    }
     setDeleteConfirm(null)
   }
 
@@ -477,7 +481,8 @@ export default function AttendanceManagement() {
 
         {/* 교시 필터 컨트롤 */}
         {rows.length > 0 && (() => {
-          const allP = [...new Set(rows.flatMap(r => r.allPeriods))].sort((a,b) => a-b)
+          // period=0은 예외 등원 sentinel — 필터 버튼에서 제외
+          const allP = [...new Set(rows.flatMap(r => r.allPeriods))].filter(p => p > 0).sort((a,b) => a-b)
           return (
             <div style={{ display:'flex', gap:'8px', marginBottom:'8px', flexWrap:'wrap', alignItems:'center' }}>
               <span style={{ fontSize:'12px', fontWeight:700, color:'#64748B' }}>교시 필터:</span>
@@ -594,9 +599,9 @@ export default function AttendanceManagement() {
                       {/* 등원 교시 (대표 교시) — 예외 등원은 교시 없이 뱃지 + 삭제 버튼 */}
                       <td style={{ ...cell, textAlign:'center' }}>
                         {isException ? (
-                          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:'5px' }}>
+                          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'5px' }}>
                             <span style={{
-                              display:'inline-block', padding:'3px 12px', borderRadius:'999px',
+                              display:'inline-block', padding:'3px 10px', borderRadius:'999px',
                               background:'#FEF3C7', color:'#92400E',
                               border:'1px solid #FDE68A',
                               fontSize:'11px', fontWeight:700,
@@ -605,15 +610,15 @@ export default function AttendanceManagement() {
                               onClick={() => setDeleteConfirm(row)}
                               title="예외 등원 삭제"
                               style={{
-                                display:'inline-flex', alignItems:'center', gap:'3px',
-                                padding:'2px 8px', borderRadius:'6px', fontSize:'10px', fontWeight:600,
+                                display:'inline-flex', alignItems:'center', justifyContent:'center',
+                                width:'22px', height:'22px', borderRadius:'6px', padding:0,
                                 border:'1px solid #FECACA', background:'#FEF2F2', color:'#EF4444',
-                                cursor:'pointer',
+                                cursor:'pointer', flexShrink:0,
                               }}
                               onMouseEnter={e => { e.currentTarget.style.background='#FEE2E2'; e.currentTarget.style.borderColor='#EF4444' }}
                               onMouseLeave={e => { e.currentTarget.style.background='#FEF2F2'; e.currentTarget.style.borderColor='#FECACA' }}
                             >
-                              <Trash2 size={10} /> 삭제
+                              <Trash2 size={11} />
                             </button>
                           </div>
                         ) : (
