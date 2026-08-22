@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Layout from '../components/Layout'
 import { createClient } from '@supabase/supabase-js'
-import { ClipboardList, RefreshCw, Users, CheckCircle, Clock, ChevronUp, ChevronDown, X, UserPlus, Search } from 'lucide-react'
+import { ClipboardList, RefreshCw, Users, CheckCircle, Clock, ChevronUp, ChevronDown, X, UserPlus, Search, Trash2 } from 'lucide-react'
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -59,6 +59,7 @@ export default function AttendanceManagement() {
   const [exSelectedStudent,  setExSelectedStudent]  = useState(null)
   const [addingException,    setAddingException]    = useState(false)
   const [loadingStudents,    setLoadingStudents]    = useState(false)
+  const [deleteConfirm,      setDeleteConfirm]      = useState(null)   // 삭제 확인할 row
   // 예외 등원은 교시 없이 period=0으로 저장 (특별 sentinel 값)
 
   useEffect(() => { fetchAttendance(); setLocalText({}); setFilterPeriod(0) }, [selectedDate])
@@ -234,6 +235,19 @@ export default function AttendanceManagement() {
 
     setRows(finalRows)
     setLoading(false)
+  }
+
+  // ── 예외 등원 삭제 ───────────────────────────────────────────
+  const deleteExceptionStudent = async (row) => {
+    await supabase
+      .from('attendance')
+      .delete()
+      .eq('date', selectedDate)
+      .eq('student_id', row.studentId)
+      .eq('period', 0)
+
+    setRows(prev => prev.filter(r => !(r.studentId === row.studentId && r.isException)))
+    setDeleteConfirm(null)
   }
 
   // ── 예외 등원 모달 열기 ──────────────────────────────────────
@@ -577,15 +591,31 @@ export default function AttendanceManagement() {
                     <tr key={`${row.studentId}_${row.period}`}
                       style={{ background:rowBg, transition:'background 0.15s' }}>
 
-                      {/* 등원 교시 (대표 교시) — 예외 등원은 교시 없이 뱃지만 */}
+                      {/* 등원 교시 (대표 교시) — 예외 등원은 교시 없이 뱃지 + 삭제 버튼 */}
                       <td style={{ ...cell, textAlign:'center' }}>
                         {isException ? (
-                          <span style={{
-                            display:'inline-block', padding:'3px 12px', borderRadius:'999px',
-                            background:'#FEF3C7', color:'#92400E',
-                            border:'1px solid #FDE68A',
-                            fontSize:'11px', fontWeight:700,
-                          }}>예외 등원</span>
+                          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:'5px' }}>
+                            <span style={{
+                              display:'inline-block', padding:'3px 12px', borderRadius:'999px',
+                              background:'#FEF3C7', color:'#92400E',
+                              border:'1px solid #FDE68A',
+                              fontSize:'11px', fontWeight:700,
+                            }}>예외 등원</span>
+                            <button
+                              onClick={() => setDeleteConfirm(row)}
+                              title="예외 등원 삭제"
+                              style={{
+                                display:'inline-flex', alignItems:'center', gap:'3px',
+                                padding:'2px 8px', borderRadius:'6px', fontSize:'10px', fontWeight:600,
+                                border:'1px solid #FECACA', background:'#FEF2F2', color:'#EF4444',
+                                cursor:'pointer',
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.background='#FEE2E2'; e.currentTarget.style.borderColor='#EF4444' }}
+                              onMouseLeave={e => { e.currentTarget.style.background='#FEF2F2'; e.currentTarget.style.borderColor='#FECACA' }}
+                            >
+                              <Trash2 size={10} /> 삭제
+                            </button>
+                          </div>
                         ) : (
                           <span style={{
                             display:'inline-block', padding:'3px 12px', borderRadius:'999px',
@@ -851,6 +881,50 @@ export default function AttendanceManagement() {
                 onMouseLeave={e => { if(exSelectedStudent) e.currentTarget.style.background='#F59E0B' }}
               >
                 {addingException ? '추가 중...' : '예외 등원 추가'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 예외 등원 삭제 확인 모달 ─────────────────────────────── */}
+      {deleteConfirm && (
+        <div
+          style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50 }}
+          onClick={() => setDeleteConfirm(null)}
+        >
+          <div
+            style={{ background:'#fff', borderRadius:'18px', padding:'28px', width:'340px', maxWidth:'92vw', boxShadow:'0 24px 64px rgba(0,0,0,0.18)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display:'flex', alignItems:'center', gap:'12px', marginBottom:'16px' }}>
+              <div style={{ width:'40px', height:'40px', borderRadius:'12px', background:'#FEF2F2', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <Trash2 size={18} style={{ color:'#EF4444' }} />
+              </div>
+              <div>
+                <p style={{ fontSize:'15px', fontWeight:700, color:'#0F172A', margin:0 }}>예외 등원 삭제</p>
+                <p style={{ fontSize:'12px', color:'#94A3B8', margin:0 }}>삭제하면 출결 기록도 함께 사라져요</p>
+              </div>
+            </div>
+
+            <div style={{ background:'#FFF7ED', border:'1.5px solid #FDE68A', borderRadius:'10px', padding:'12px 14px', marginBottom:'20px', fontSize:'13px', color:'#92400E' }}>
+              <strong>{deleteConfirm.studentName}</strong> 학생의 예외 등원 기록을 삭제할까요?
+            </div>
+
+            <div style={{ display:'flex', gap:'8px' }}>
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                style={{ flex:1, padding:'11px', borderRadius:'10px', border:'1.5px solid #E2E8F0', background:'#F8FAFC', fontSize:'13px', fontWeight:600, color:'#64748B', cursor:'pointer' }}
+              >
+                취소
+              </button>
+              <button
+                onClick={() => deleteExceptionStudent(deleteConfirm)}
+                style={{ flex:1, padding:'11px', borderRadius:'10px', border:'none', background:'#EF4444', fontSize:'13px', fontWeight:700, color:'#fff', cursor:'pointer' }}
+                onMouseEnter={e => e.currentTarget.style.background='#DC2626'}
+                onMouseLeave={e => e.currentTarget.style.background='#EF4444'}
+              >
+                삭제
               </button>
             </div>
           </div>
