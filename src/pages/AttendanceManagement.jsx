@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Layout from '../components/Layout'
 import { createClient } from '@supabase/supabase-js'
-import { ClipboardList, RefreshCw, Users, CheckCircle, Clock, ChevronUp, ChevronDown, X } from 'lucide-react'
+import { ClipboardList, RefreshCw, Users, CheckCircle, Clock, ChevronUp, ChevronDown, X, UserPlus, Search } from 'lucide-react'
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -38,19 +38,28 @@ export default function AttendanceManagement() {
   const [localText,    setLocalText]    = useState({})
 
   // 정렬 상태
-  const [sortField, setSortField] = useState('period')  // 기본: 교시순
+  const [sortField, setSortField] = useState('period')
   const [sortDir,   setSortDir]   = useState('asc')
 
   // 필터 상태
-  const [filterAttendance, setFilterAttendance] = useState('전체')  // 전체/등원/결석/등원예정
-  const [filterAbsence,    setFilterAbsence]    = useState('전체')  // 전체/-/결석/하원/학원/식사
-  const [filterPeriod,     setFilterPeriod]     = useState(0)       // 0=전체, 1~N=해당 교시만
+  const [filterAttendance, setFilterAttendance] = useState('전체')
+  const [filterAbsence,    setFilterAbsence]    = useState('전체')
+  const [filterPeriod,     setFilterPeriod]     = useState(0)
 
   // 특이사항 팝업
-  const [notesPopup, setNotesPopup] = useState(null)  // { name, notes }
+  const [notesPopup, setNotesPopup] = useState(null)
 
-  // 과거 날짜 여부 (오늘 기준)
+  // 과거 날짜 여부
   const [isPastDate, setIsPastDate] = useState(false)
+
+  // ── 예외 등원 관련 상태 ──────────────────────────────────────
+  const [showExceptionModal, setShowExceptionModal] = useState(false)
+  const [allStudents,        setAllStudents]        = useState([])
+  const [exSearchQuery,      setExSearchQuery]      = useState('')
+  const [exPeriod,           setExPeriod]           = useState(1)
+  const [exSelectedStudent,  setExSelectedStudent]  = useState(null)
+  const [addingException,    setAddingException]    = useState(false)
+  const [loadingStudents,    setLoadingStudents]    = useState(false)
 
   useEffect(() => { fetchAttendance(); setLocalText({}); setFilterPeriod(0) }, [selectedDate])
 
@@ -62,8 +71,20 @@ export default function AttendanceManagement() {
     const dow    = new Date(selectedDate + 'T00:00:00').getDay()
     const slotKey = DAY_SLOT_KEYS[dow]
 
+    // 예외 여부 판단을 위해 그날 스케줄이 있는 학생 ID 목록 미리 조회
+    const { data: schData } = await supabase
+      .from('schedules')
+      .select(`student_id, ${slotKey}`)
+
+    const scheduledStudentIds = new Set()
+    if (schData) {
+      for (const s of schData) {
+        const slots = s[slotKey]
+        if (Array.isArray(slots) && slots.length > 0) scheduledStudentIds.add(s.student_id)
+      }
+    }
+
     // ── 과거 날짜: 실제 출결 기록 기반 표시 ────────────────────────────
-    // 퇴원생도 포함, 스케줄 변경 무관 → 그날의 기록이 절대 사라지지 않음
     if (past) {
       const { data: attData } = await supabase
         .from('attendance')
@@ -76,7 +97,6 @@ export default function AttendanceManagement() {
         return
       }
 
-      // 학생별로 교시 목록 + 출결 기록 수집
       const studentMap = {}
       for (const att of attData) {
         if (!att.students) continue
@@ -92,13 +112,14 @@ export default function AttendanceManagement() {
             specialNotes: att.students.special_notes || '',
             allPeriods:   [],
             periodAttMap: {},
+            // 스케줄에 없으면 예외 등원
+            isException:  !scheduledStudentIds.has(sid),
           }
         }
         studentMap[sid].allPeriods.push(att.period)
         studentMap[sid].periodAttMap[att.period] = att
       }
 
-      // 첫 번째(최소) 교시를 대표 행으로 사용
       const pastRows = []
       for (const rowBase of Object.values(studentMap)) {
         rowBase.allPeriods.sort((a, b) => a - b)
@@ -115,7 +136,7 @@ export default function AttendanceManagement() {
       return
     }
 
-    // ── 오늘/미래: 기존 스케줄 기반 로직 ────────────────────────────────
+    // ── 오늘/미래: 스케줄 기반 로직 ────────────────────────────────
     const { data: schedules, error } = await supabase
       .from('schedules')
       .select('*, students(id,name,seat_number,school,grade,special_notes,status,first_attendance_date)')
@@ -142,6 +163,7 @@ export default function AttendanceManagement() {
           specialNotes: student.special_notes || '',
           period,
           allPeriods,
+          isException:  false,
         })
       }
     }
@@ -152,6 +174,7 @@ export default function AttendanceManagement() {
         studentMinPeriod[row.studentId] = row
     }
     const todayRows = Object.values(studentMinPeriod)
+    const todayStudentIds = new Set(todayRows.map(r => r.studentId))
 
     const { data: attData } = await supabase
       .from('attendance').select('*').eq('date', selectedDate)
@@ -159,20 +182,144 @@ export default function AttendanceManagement() {
     const attMap = {}
     if (attData) for (const a of attData) attMap[`${a.student_id}_${a.period}`] = a
 
-    setRows(todayRows.map(row => ({ ...row, attendance: attMap[`${row.studentId}_${row.period}`] || null })))
+    // 정규 등원 학생 행
+    const finalRows = todayRows.map(row => ({
+      ...row,
+      attendance: attMap[`${row.studentId}_${row.period}`] || null,
+    }))
+
+    // ── 예외 등원 학생 감지: 출결 기록은 있지만 스케줄에 없는 학생 ──
+    const exceptionAtts = attData
+      ? attData.filter(a => !todayStudentIds.has(a.student_id))
+      : []
+
+    if (exceptionAtts.length > 0) {
+      const exStudentIds = [...new Set(exceptionAtts.map(a => a.student_id))]
+      const { data: exStudents } = await supabase
+        .from('students')
+        .select('id, name, seat_number, school, grade, special_notes, status')
+        .in('id', exStudentIds)
+
+      const exStudentMap = {}
+      if (exStudents) for (const s of exStudents) exStudentMap[s.id] = s
+
+      // 예외 학생별 그룹핑
+      const exGrouped = {}
+      for (const att of exceptionAtts) {
+        if (!exGrouped[att.student_id]) exGrouped[att.student_id] = []
+        exGrouped[att.student_id].push(att)
+      }
+
+      for (const [sidStr, atts] of Object.entries(exGrouped)) {
+        const sid = parseInt(sidStr)
+        atts.sort((a, b) => a.period - b.period)
+        const minPeriod = atts[0].period
+        const student = exStudentMap[sid]
+
+        finalRows.push({
+          scheduleId:   null,
+          studentId:    sid,
+          studentName:  student?.name || '알 수 없음',
+          seatNumber:   student?.seat_number || null,
+          school:       student?.school,
+          grade:        student?.grade,
+          specialNotes: student?.special_notes || '',
+          period:       minPeriod,
+          allPeriods:   atts.map(a => a.period),
+          attendance:   atts[0],
+          isException:  true,
+        })
+      }
+    }
+
+    setRows(finalRows)
     setLoading(false)
   }
+
+  // ── 예외 등원 모달 열기 ──────────────────────────────────────
+  const openExceptionModal = async () => {
+    setExSearchQuery('')
+    setExPeriod(1)
+    setExSelectedStudent(null)
+    setShowExceptionModal(true)
+    setLoadingStudents(true)
+
+    const { data: students } = await supabase
+      .from('students')
+      .select('id, name, school, grade, seat_number, status')
+      .eq('status', '재원생')
+      .order('name')
+
+    setAllStudents(students || [])
+    setLoadingStudents(false)
+  }
+
+  // ── 예외 등원자 추가 ─────────────────────────────────────────
+  const addExceptionStudent = async () => {
+    if (!exSelectedStudent || addingException) return
+    setAddingException(true)
+
+    const payload = {
+      date:               selectedDate,
+      student_id:         exSelectedStudent.id,
+      period:             exPeriod,
+      attendance_status:  '등원예정',
+      absence_status:     '-',
+      absence_reason:     '',
+      is_late:            false,
+      late_reason:        '',
+      note:               '',
+    }
+
+    const { data } = await supabase
+      .from('attendance')
+      .upsert(payload, { onConflict: 'date,student_id,period' })
+      .select().single()
+
+    if (data) {
+      // 이미 같은 학생이 rows에 있으면 allPeriods만 업데이트
+      const existingIdx = rows.findIndex(r => r.studentId === exSelectedStudent.id && r.isException)
+      if (existingIdx >= 0) {
+        setRows(prev => prev.map((r, i) =>
+          i === existingIdx
+            ? { ...r, allPeriods: [...new Set([...r.allPeriods, exPeriod])].sort((a,b)=>a-b) }
+            : r
+        ))
+      } else {
+        const newRow = {
+          scheduleId:   null,
+          studentId:    exSelectedStudent.id,
+          studentName:  exSelectedStudent.name,
+          seatNumber:   exSelectedStudent.seat_number || null,
+          school:       exSelectedStudent.school,
+          grade:        exSelectedStudent.grade,
+          specialNotes: '',
+          period:       exPeriod,
+          allPeriods:   [exPeriod],
+          attendance:   data,
+          isException:  true,
+        }
+        setRows(prev => [...prev, newRow])
+      }
+    }
+
+    setAddingException(false)
+    setShowExceptionModal(false)
+  }
+
+  // 이미 등록된 학생 제외한 재원생 목록 (같은 날 이미 예외 등원 중인 학생도 선택 가능 - 다른 교시용)
+  const alreadyInRows = new Set(rows.map(r => r.studentId))
+  const filteredStudents = allStudents
+    .filter(s => !alreadyInRows.has(s.id))
+    .filter(s => exSearchQuery === '' || s.name.includes(exSearchQuery))
 
   // 정렬 + 필터 적용
   const processedRows = (() => {
     let result = [...rows]
 
-    // 교시 필터 (0=전체, N=N교시만)
     if (filterPeriod !== 0) {
       result = result.filter(r => r.allPeriods.includes(filterPeriod))
     }
-
-    // 필터
     if (filterAttendance !== '전체') {
       result = result.filter(r => (r.attendance?.attendance_status || '등원예정') === filterAttendance)
     }
@@ -180,7 +327,6 @@ export default function AttendanceManagement() {
       result = result.filter(r => (r.attendance?.absence_status || '-') === filterAbsence)
     }
 
-    // 정렬
     result.sort((a, b) => {
       let valA, valB
       if (sortField === 'period')     { valA = a.period; valB = b.period }
@@ -245,7 +391,6 @@ export default function AttendanceManagement() {
     return localText[key]?.[field] !== undefined ? localText[key][field] : row.attendance?.[field] || ''
   }
 
-  // 정렬 가능한 헤더 렌더러
   const SortTh = ({ field, label, center }) => (
     <th
       onClick={() => toggleSort(field)}
@@ -264,12 +409,11 @@ export default function AttendanceManagement() {
 
   return (
     <Layout>
-      {/* placeholder를 연하게, 직접 입력값을 진하게 표시하기 위한 CSS */}
       <style>{`
-        .att-text-input::placeholder {
-          color: #B8C4CC;
-          font-weight: 400;
-        }
+        .att-text-input::placeholder { color: #B8C4CC; font-weight: 400; }
+        .ex-student-item { transition: background 0.12s; cursor: pointer; }
+        .ex-student-item:hover { background: #F5F3FF !important; }
+        .ex-student-item.selected { background: #EEF2FF !important; }
       `}</style>
       <div style={{ padding:'28px 32px' }}>
 
@@ -303,6 +447,21 @@ export default function AttendanceManagement() {
             <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
               style={{ border:'1.5px solid #E2E8F0', borderRadius:'10px', padding:'9px 12px', fontSize:'13px', outline:'none', color:'#0F172A', background:'#fff' }} />
 
+            {/* ── 예외 등원 추가 버튼 ── */}
+            {!isPastDate && (
+              <button onClick={openExceptionModal}
+                style={{
+                  display:'flex', alignItems:'center', gap:'7px', padding:'9px 14px',
+                  borderRadius:'10px', border:'1.5px solid #F59E0B',
+                  background:'#FFFBEB', fontSize:'13px', fontWeight:600, color:'#B45309', cursor:'pointer',
+                  whiteSpace:'nowrap',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background='#FEF3C7'; e.currentTarget.style.borderColor='#D97706' }}
+                onMouseLeave={e => { e.currentTarget.style.background='#FFFBEB'; e.currentTarget.style.borderColor='#F59E0B' }}>
+                <UserPlus size={14} /> 예외 등원 추가
+              </button>
+            )}
+
             <button onClick={fetchAttendance}
               style={{ display:'flex', alignItems:'center', gap:'7px', padding:'9px 14px', borderRadius:'10px', border:'1.5px solid #E2E8F0', background:'#fff', fontSize:'13px', fontWeight:600, color:'#475569', cursor:'pointer' }}
               onMouseEnter={e => { e.currentTarget.style.borderColor='#6366F1'; e.currentTarget.style.color='#6366F1' }}
@@ -314,7 +473,6 @@ export default function AttendanceManagement() {
 
         {/* 교시 필터 컨트롤 */}
         {rows.length > 0 && (() => {
-          // 오늘 등장하는 모든 교시 수집
           const allP = [...new Set(rows.flatMap(r => r.allPeriods))].sort((a,b) => a-b)
           return (
             <div style={{ display:'flex', gap:'8px', marginBottom:'8px', flexWrap:'wrap', alignItems:'center' }}>
@@ -400,7 +558,6 @@ export default function AttendanceManagement() {
               <thead>
                 <tr>
                   <SortTh field="period" label="등원 교시" center />
-                  {/* 오늘 전체 교시 컬럼 추가 */}
                   <th style={{ ...cell, background:'#F8FAFC', fontSize:'11px', fontWeight:700, color:'#64748B', letterSpacing:'0.04em', whiteSpace:'nowrap' }}>
                     오늘 전체 교시
                   </th>
@@ -416,10 +573,15 @@ export default function AttendanceManagement() {
               </thead>
               <tbody>
                 {processedRows.map((row, idx) => {
-                  const att       = row.attendance
-                  const isPresent = att?.attendance_status==='등원' && att?.absence_status==='-'
-                  const isAbsent  = att?.absence_status && att.absence_status!=='-'
-                  const rowBg     = isPresent ? '#F0FDF4' : isAbsent ? '#FEF2F2' : (idx%2===0 ? '#fff' : '#FAFBFF')
+                  const att        = row.attendance
+                  const isPresent  = att?.attendance_status==='등원' && att?.absence_status==='-'
+                  const isAbsent   = att?.absence_status && att.absence_status!=='-'
+                  const isException = row.isException
+
+                  // 예외 등원은 연한 주황 배경, 나머지는 기존 로직
+                  const rowBg = isException
+                    ? '#FFFBEB'
+                    : (isPresent ? '#F0FDF4' : isAbsent ? '#FEF2F2' : (idx%2===0 ? '#fff' : '#FAFBFF'))
 
                   return (
                     <tr key={`${row.studentId}_${row.period}`}
@@ -427,28 +589,35 @@ export default function AttendanceManagement() {
 
                       {/* 등원 교시 (대표 교시) */}
                       <td style={{ ...cell, textAlign:'center' }}>
-                        <span style={{ display:'inline-block', padding:'3px 12px', borderRadius:'999px', background:'#EEF2FF', color:'#6366F1', fontSize:'11px', fontWeight:700 }}>
+                        <span style={{
+                          display:'inline-block', padding:'3px 12px', borderRadius:'999px',
+                          background: isException ? '#FEF3C7' : '#EEF2FF',
+                          color:      isException ? '#B45309'  : '#6366F1',
+                          fontSize:'11px', fontWeight:700,
+                        }}>
                           {row.period}교시
                         </span>
                       </td>
 
-                      {/* 오늘 전체 교시 (번호만 표시) */}
+                      {/* 오늘 전체 교시 */}
                       <td style={{ ...cell, textAlign:'center' }}>
                         <div style={{ display:'flex', gap:'3px', justifyContent:'center', flexWrap:'wrap' }}>
                           {row.allPeriods.map(p => (
                             <span key={p} style={{
                               display:'inline-flex', alignItems:'center', justifyContent:'center',
                               width:'22px', height:'22px', borderRadius:'6px', fontSize:'11px', fontWeight:700,
-                              background: p === row.period ? '#6366F1' : '#F1F5F9',
-                              color:      p === row.period ? '#fff'    : '#475569',
+                              background: p === row.period
+                                ? (isException ? '#F59E0B' : '#6366F1')
+                                : '#F1F5F9',
+                              color: p === row.period ? '#fff' : '#475569',
                             }}>{p}</span>
                           ))}
                         </div>
                       </td>
 
-                      {/* 이름 + 학년 + 특이사항 뱃지 */}
+                      {/* 이름 + 학년 + 예외 뱃지 + 특이사항 */}
                       <td style={{ ...cell, whiteSpace:'nowrap' }}>
-                        <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:'6px', flexWrap:'wrap' }}>
                           <span style={{ fontWeight:700, color:'#0F172A' }}>{row.studentName}</span>
                           {row.grade && (
                             <span style={{
@@ -457,7 +626,16 @@ export default function AttendanceManagement() {
                               color:      row.grade.startsWith('고') ? '#4F46E5' : '#059669',
                             }}>{row.grade}</span>
                           )}
-                          {/* 특이사항 있으면 클릭 가능한 뱃지 표시 */}
+                          {/* 예외 등원 뱃지 */}
+                          {isException && (
+                            <span style={{
+                              padding:'2px 8px', borderRadius:'999px', fontSize:'10px', fontWeight:700,
+                              background:'#FEF3C7', color:'#92400E',
+                              border:'1px solid #FDE68A',
+                              letterSpacing:'0.02em',
+                            }}>예외 등원</span>
+                          )}
+                          {/* 특이사항 */}
                           {row.specialNotes && (
                             <button
                               onClick={() => setNotesPopup({ name: row.studentName, notes: row.specialNotes })}
@@ -514,8 +692,7 @@ export default function AttendanceManagement() {
                           placeholder="사유 입력"
                           className="att-text-input"
                           style={{ padding:'5px 10px', borderRadius:'8px', fontSize:'12px', fontWeight:600, border:'1.5px solid #E2E8F0', outline:'none', width:'100px', background:'#F8FAFC', color:'#0F172A' }}
-                          onFocus={e => { e.target.style.borderColor='#6366F1'; e.target.style.background='#fff' }}
-                          onBlur2={e => { e.target.style.borderColor='#E2E8F0'; e.target.style.background='#F8FAFC' }} />
+                          onFocus={e => { e.target.style.borderColor='#6366F1'; e.target.style.background='#fff' }} />
                       </td>
 
                       {/* 지각 여부 */}
@@ -542,7 +719,7 @@ export default function AttendanceManagement() {
                           onFocus={e => { e.target.style.borderColor='#6366F1'; e.target.style.background='#fff' }} />
                       </td>
 
-                      {/* 비고 (자유 메모) */}
+                      {/* 비고 */}
                       <td style={cell}>
                         <input type="text" value={textVal(row, 'note')}
                           onChange={e => handleTextChange(row.studentId, row.period, 'note', e.target.value)}
@@ -550,8 +727,7 @@ export default function AttendanceManagement() {
                           placeholder="메모 입력"
                           className="att-text-input"
                           style={{ padding:'5px 10px', borderRadius:'8px', fontSize:'12px', fontWeight:600, border:'1.5px solid #E2E8F0', outline:'none', width:'140px', background:'#F8FAFC', color:'#0F172A' }}
-                          onFocus={e => { e.target.style.borderColor='#6366F1'; e.target.style.background='#fff' }}
-                          onBlurCapture={e => { e.target.style.borderColor='#E2E8F0'; e.target.style.background='#F8FAFC' }} />
+                          onFocus={e => { e.target.style.borderColor='#6366F1'; e.target.style.background='#fff' }} />
                       </td>
                     </tr>
                   )
@@ -561,6 +737,166 @@ export default function AttendanceManagement() {
           </div>
         )}
       </div>
+
+      {/* ── 예외 등원 추가 모달 ──────────────────────────────────── */}
+      {showExceptionModal && (
+        <div
+          style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:50 }}
+          onClick={() => setShowExceptionModal(false)}
+        >
+          <div
+            style={{ background:'#fff', borderRadius:'20px', padding:'28px', width:'440px', maxWidth:'95vw', maxHeight:'85vh', display:'flex', flexDirection:'column', boxShadow:'0 24px 64px rgba(0,0,0,0.18)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* 모달 헤더 */}
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'20px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
+                <div style={{ width:'40px', height:'40px', borderRadius:'12px', background:'#FEF3C7', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <UserPlus size={18} style={{ color:'#B45309' }} />
+                </div>
+                <div>
+                  <p style={{ fontSize:'16px', fontWeight:700, color:'#0F172A', margin:0 }}>예외 등원 추가</p>
+                  <p style={{ fontSize:'12px', color:'#94A3B8', margin:0 }}>재원생 중 오늘 예외 등원할 학생을 선택하세요</p>
+                </div>
+              </div>
+              <button onClick={() => setShowExceptionModal(false)}
+                style={{ width:'32px', height:'32px', borderRadius:'8px', border:'none', background:'#F1F5F9', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <X size={15} style={{ color:'#64748B' }} />
+              </button>
+            </div>
+
+            {/* 교시 선택 */}
+            <div style={{ marginBottom:'16px' }}>
+              <label style={{ fontSize:'12px', fontWeight:700, color:'#475569', display:'block', marginBottom:'6px' }}>
+                등원 교시
+              </label>
+              <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                <input
+                  type="number" min={1} max={12} value={exPeriod}
+                  onChange={e => setExPeriod(Math.max(1, Math.min(12, parseInt(e.target.value) || 1)))}
+                  style={{
+                    width:'80px', padding:'8px 12px', borderRadius:'10px', border:'1.5px solid #E2E8F0',
+                    fontSize:'14px', fontWeight:700, color:'#0F172A', outline:'none', textAlign:'center',
+                  }}
+                  onFocus={e => e.target.style.borderColor='#F59E0B'}
+                  onBlur={e  => e.target.style.borderColor='#E2E8F0'}
+                />
+                <span style={{ fontSize:'13px', color:'#64748B', fontWeight:600 }}>교시</span>
+                <div style={{ display:'flex', gap:'4px', flexWrap:'wrap' }}>
+                  {[1,2,3,4,5,6,7,8].map(p => (
+                    <button key={p} onClick={() => setExPeriod(p)}
+                      style={{
+                        width:'28px', height:'28px', borderRadius:'7px', fontSize:'12px', fontWeight:700,
+                        border: exPeriod===p ? '1.5px solid #F59E0B' : '1.5px solid #E2E8F0',
+                        background: exPeriod===p ? '#FEF3C7' : '#F8FAFC',
+                        color: exPeriod===p ? '#B45309' : '#64748B',
+                        cursor:'pointer',
+                      }}>{p}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* 학생 검색 */}
+            <div style={{ position:'relative', marginBottom:'10px' }}>
+              <Search size={14} style={{ position:'absolute', left:'12px', top:'50%', transform:'translateY(-50%)', color:'#94A3B8' }} />
+              <input
+                type="text"
+                placeholder="이름으로 검색"
+                value={exSearchQuery}
+                onChange={e => setExSearchQuery(e.target.value)}
+                style={{
+                  width:'100%', padding:'9px 12px 9px 34px', borderRadius:'10px', border:'1.5px solid #E2E8F0',
+                  fontSize:'13px', color:'#0F172A', outline:'none', boxSizing:'border-box',
+                }}
+                onFocus={e => e.target.style.borderColor='#F59E0B'}
+                onBlur={e  => e.target.style.borderColor='#E2E8F0'}
+              />
+            </div>
+
+            {/* 학생 목록 */}
+            <div style={{ flex:1, overflowY:'auto', border:'1.5px solid #E2E8F0', borderRadius:'12px', marginBottom:'16px' }}>
+              {loadingStudents ? (
+                <div style={{ padding:'32px', textAlign:'center', color:'#94A3B8', fontSize:'13px' }}>불러오는 중...</div>
+              ) : filteredStudents.length === 0 ? (
+                <div style={{ padding:'32px', textAlign:'center', color:'#94A3B8', fontSize:'13px' }}>
+                  {exSearchQuery ? `"${exSearchQuery}" 검색 결과 없음` : '추가할 수 있는 학생이 없어요'}
+                </div>
+              ) : (
+                filteredStudents.map(student => {
+                  const isSelected = exSelectedStudent?.id === student.id
+                  return (
+                    <div
+                      key={student.id}
+                      className={`ex-student-item${isSelected ? ' selected' : ''}`}
+                      onClick={() => setExSelectedStudent(isSelected ? null : student)}
+                      style={{
+                        display:'flex', alignItems:'center', justifyContent:'space-between',
+                        padding:'11px 14px',
+                        borderBottom:'1px solid #F1F5F9',
+                        background: isSelected ? '#EEF2FF' : '#fff',
+                      }}
+                    >
+                      <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                        <div style={{
+                          width:'32px', height:'32px', borderRadius:'9px',
+                          background: isSelected ? '#6366F1' : '#F1F5F9',
+                          display:'flex', alignItems:'center', justifyContent:'center',
+                          fontSize:'13px', fontWeight:700,
+                          color: isSelected ? '#fff' : '#64748B',
+                          transition:'all 0.15s',
+                        }}>
+                          {student.name[0]}
+                        </div>
+                        <div>
+                          <p style={{ fontSize:'14px', fontWeight:700, color:'#0F172A', margin:0 }}>{student.name}</p>
+                          <p style={{ fontSize:'11px', color:'#94A3B8', margin:0 }}>
+                            {[student.school, student.grade].filter(Boolean).join(' · ')}
+                            {student.seat_number ? ` · ${student.seat_number}번 좌석` : ''}
+                          </p>
+                        </div>
+                      </div>
+                      {isSelected && (
+                        <span style={{ fontSize:'11px', fontWeight:700, color:'#6366F1', background:'#EEF2FF', padding:'2px 10px', borderRadius:'999px' }}>선택됨</span>
+                      )}
+                    </div>
+                  )
+                })
+              )}
+            </div>
+
+            {/* 선택된 학생 요약 + 확인 버튼 */}
+            {exSelectedStudent && (
+              <div style={{ background:'#FFFBEB', border:'1.5px solid #FDE68A', borderRadius:'10px', padding:'10px 14px', marginBottom:'12px', fontSize:'13px', color:'#92400E' }}>
+                <strong>{exSelectedStudent.name}</strong> 학생을 <strong>{exPeriod}교시</strong> 예외 등원으로 추가합니다
+              </div>
+            )}
+
+            <div style={{ display:'flex', gap:'8px' }}>
+              <button onClick={() => setShowExceptionModal(false)}
+                style={{ flex:1, padding:'11px', borderRadius:'10px', border:'1.5px solid #E2E8F0', background:'#F8FAFC', fontSize:'13px', fontWeight:600, color:'#64748B', cursor:'pointer' }}>
+                취소
+              </button>
+              <button
+                onClick={addExceptionStudent}
+                disabled={!exSelectedStudent || addingException}
+                style={{
+                  flex:2, padding:'11px', borderRadius:'10px', border:'none',
+                  background: exSelectedStudent ? '#F59E0B' : '#E2E8F0',
+                  fontSize:'13px', fontWeight:700,
+                  color: exSelectedStudent ? '#fff' : '#94A3B8',
+                  cursor: exSelectedStudent ? 'pointer' : 'not-allowed',
+                  transition:'background 0.15s',
+                }}
+                onMouseEnter={e => { if(exSelectedStudent) e.currentTarget.style.background='#D97706' }}
+                onMouseLeave={e => { if(exSelectedStudent) e.currentTarget.style.background='#F59E0B' }}
+              >
+                {addingException ? '추가 중...' : '예외 등원 추가'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 특이사항 팝업 모달 */}
       {notesPopup && (
