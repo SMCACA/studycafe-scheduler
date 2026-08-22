@@ -122,20 +122,40 @@ export default function StudentManagement() {
     return matchStatus && matchSearch
   })
 
-  // ✅ 정렬 적용 (좌석, 이름 정렬)
+  // ✅ 정렬 적용 (좌석·이름·상태·SMC·학년·학교·첫등원일·질문방 정렬)
+  //    학년은 중1→중2→중3→고1→고2→고3→성인 순서로 정렬해요
+  const GRADE_ORDER = { '중1':1, '중2':2, '중3':3, '고1':4, '고2':5, '고3':6, '성인':7 }
   const sorted = [...filtered].sort((a, b) => {
-    let valA, valB
+    // ── 숫자 비교 필드 ──
     if (sortField === 'seat') {
-      valA = a.seat_number ?? 9999
-      valB = b.seat_number ?? 9999
+      const valA = a.seat_number ?? 9999
+      const valB = b.seat_number ?? 9999
       return sortDir === 'asc' ? valA - valB : valB - valA
     }
-    // 기본: 이름순
-    valA = a.name || ''
-    valB = b.name || ''
+    if (sortField === 'grade') {
+      const valA = GRADE_ORDER[a.grade] ?? 99
+      const valB = GRADE_ORDER[b.grade] ?? 99
+      return sortDir === 'asc' ? valA - valB : valB - valA
+    }
+    if (sortField === 'academy') {
+      const valA = a.is_academy_student ? 0 : 1
+      const valB = b.is_academy_student ? 0 : 1
+      return sortDir === 'asc' ? valA - valB : valB - valA
+    }
+    if (sortField === 'questionRoom') {
+      const valA = a.is_question_room_member ? 0 : 1
+      const valB = b.is_question_room_member ? 0 : 1
+      return sortDir === 'asc' ? valA - valB : valB - valA
+    }
+    // ── 문자열 비교 필드 ──
+    let valA, valB
+    if      (sortField === 'status')    { valA = a.status || '재원생';              valB = b.status || '재원생' }
+    else if (sortField === 'school')    { valA = a.school || '';                    valB = b.school || '' }
+    else if (sortField === 'firstDate') { valA = a.first_attendance_date || '';     valB = b.first_attendance_date || '' }
+    else                                { valA = a.name || '';                      valB = b.name || '' }
     return sortDir === 'asc'
-      ? valA.localeCompare(valB, 'ko')
-      : valB.localeCompare(valA, 'ko')
+      ? String(valA).localeCompare(String(valB), 'ko')
+      : String(valB).localeCompare(String(valA), 'ko')
   })
 
   // ✅ 정렬 토글 함수
@@ -143,6 +163,31 @@ export default function StudentManagement() {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
     else { setSortField(field); setSortDir('asc') }
   }
+
+  // ✅ 정렬 가능한 헤더 셀 — 클릭하면 오름차순/내림차순 전환
+  //    (비유: 엑셀에서 컬럼 헤더 클릭하면 정렬되는 것과 똑같아요)
+  const SortTh = ({ field, label }) => (
+    <th
+      onClick={() => toggleSort(field)}
+      style={{
+        ...cell, background:'#F8FAFC',
+        fontSize:'11px', fontWeight:700,
+        color: sortField === field ? '#6366F1' : '#64748B',
+        letterSpacing:'0.04em', textAlign:'left', whiteSpace:'nowrap',
+        cursor:'pointer', userSelect:'none',
+      }}
+    >
+      <span style={{ display:'inline-flex', alignItems:'center', gap:'4px' }}>
+        {label}
+        {sortField === field
+          ? (sortDir === 'asc'
+              ? <ChevronUp   size={12} style={{ color:'#6366F1' }} />
+              : <ChevronDown size={12} style={{ color:'#6366F1' }} />)
+          : <span style={{ color:'#CBD5E1', fontSize:'10px' }}>↕</span>
+        }
+      </span>
+    </th>
+  )
 
   const showToast = (msg, type='success') => {
     setToast({ msg, type })
@@ -374,12 +419,19 @@ export default function StudentManagement() {
                     }
                   </span>
                 </th>
-                {['상태','SMC','학년','학교','학부모 전화','학생 전화','첫등원일','질문방','특이사항','메모','관리'].map(h => (
-                  <th key={h} style={{
-                    ...cell, background:'#F8FAFC',
-                    fontSize:'11px', fontWeight:700, color:'#64748B',
-                    letterSpacing:'0.04em', textAlign:'left', whiteSpace:'nowrap',
-                  }}>{h}</th>
+                {/* ✅ 정렬 가능: 상태·SMC·학년·학교·첫등원일·질문방 */}
+                <SortTh field="status"      label="상태" />
+                <SortTh field="academy"     label="SMC" />
+                <SortTh field="grade"       label="학년" />
+                <SortTh field="school"      label="학교" />
+                {/* 전화번호·특이사항·메모는 정렬 실익이 없어 그대로 유지 */}
+                {['학부모 전화','학생 전화'].map(h => (
+                  <th key={h} style={{ ...cell, background:'#F8FAFC', fontSize:'11px', fontWeight:700, color:'#64748B', letterSpacing:'0.04em', textAlign:'left', whiteSpace:'nowrap' }}>{h}</th>
+                ))}
+                <SortTh field="firstDate"   label="첫등원일" />
+                <SortTh field="questionRoom" label="질문방" />
+                {['특이사항','메모','관리'].map(h => (
+                  <th key={h} style={{ ...cell, background:'#F8FAFC', fontSize:'11px', fontWeight:700, color:'#64748B', letterSpacing:'0.04em', textAlign:'left', whiteSpace:'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>

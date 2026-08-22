@@ -402,7 +402,7 @@ export default function Calendar() {
                       borderBottom: idx < 35 ? '1px solid #CBD5E1' : 'none',
                       background: isSelected ? '#EEF2FF' : 'transparent',
                       transition: 'background 0.1s',
-                      opacity: cell.currentMonth ? 1 : 0.38,
+                      opacity: !cell.currentMonth ? 0.28 : (ds < todayStr ? 0.42 : 1),
                     }}
                   >
                     {/* 날짜 숫자 — 왼쪽 위 정렬 */}
@@ -685,13 +685,14 @@ export default function Calendar() {
                         const dow = group.date.getDay()
                         const isToday = group.dateStr === todayStr
                         const isSelected = selectedDay === group.dateStr
+                        const isPastGroup = group.dateStr < todayStr
                         const holiday = getHolidayName(group.dateStr)
                         const dayNum = group.date.getDate()
                         const numColor = isToday ? '#fff' : (holiday || dow === 0) ? '#EF4444' : dow === 6 ? '#3B82F6' : '#0F172A'
                         const labelColor = (holiday || dow === 0) ? '#EF4444' : dow === 6 ? '#3B82F6' : '#374151'
 
                         return (
-                          <div key={group.dateStr}>
+                          <div key={group.dateStr} style={{ opacity: isPastGroup ? 0.45 : 1, transition: 'opacity 0.15s' }}>
                             {/* 날짜 헤더 (클릭하면 해당 날 선택) */}
                             <div
                               onClick={() => setSelectedDay(isSelected ? null : group.dateStr)}

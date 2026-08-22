@@ -264,6 +264,13 @@ export default function AttendanceManagement() {
 
   return (
     <Layout>
+      {/* placeholder를 연하게, 직접 입력값을 진하게 표시하기 위한 CSS */}
+      <style>{`
+        .att-text-input::placeholder {
+          color: #B8C4CC;
+          font-weight: 400;
+        }
+      `}</style>
       <div style={{ padding:'28px 32px' }}>
 
         {/* -- 페이지 헤더 -- */}
@@ -505,7 +512,8 @@ export default function AttendanceManagement() {
                           onChange={e => handleTextChange(row.studentId, row.period, 'absence_reason', e.target.value)}
                           onBlur={e  => handleTextBlur(row, 'absence_reason', e.target.value)}
                           placeholder="사유 입력"
-                          style={{ padding:'5px 10px', borderRadius:'8px', fontSize:'12px', border:'1.5px solid #E2E8F0', outline:'none', width:'100px', background:'#F8FAFC', color:'#374151' }}
+                          className="att-text-input"
+                          style={{ padding:'5px 10px', borderRadius:'8px', fontSize:'12px', fontWeight:600, border:'1.5px solid #E2E8F0', outline:'none', width:'100px', background:'#F8FAFC', color:'#0F172A' }}
                           onFocus={e => { e.target.style.borderColor='#6366F1'; e.target.style.background='#fff' }}
                           onBlur2={e => { e.target.style.borderColor='#E2E8F0'; e.target.style.background='#F8FAFC' }} />
                       </td>
@@ -529,7 +537,8 @@ export default function AttendanceManagement() {
                           onChange={e => handleTextChange(row.studentId, row.period, 'late_reason', e.target.value)}
                           onBlur={e  => handleTextBlur(row, 'late_reason', e.target.value)}
                           placeholder="사유 입력"
-                          style={{ padding:'5px 10px', borderRadius:'8px', fontSize:'12px', border:'1.5px solid #E2E8F0', outline:'none', width:'100px', background:'#F8FAFC', color:'#374151' }}
+                          className="att-text-input"
+                          style={{ padding:'5px 10px', borderRadius:'8px', fontSize:'12px', fontWeight:600, border:'1.5px solid #E2E8F0', outline:'none', width:'100px', background:'#F8FAFC', color:'#0F172A' }}
                           onFocus={e => { e.target.style.borderColor='#6366F1'; e.target.style.background='#fff' }} />
                       </td>
 
@@ -539,7 +548,8 @@ export default function AttendanceManagement() {
                           onChange={e => handleTextChange(row.studentId, row.period, 'note', e.target.value)}
                           onBlur={e  => handleTextBlur(row, 'note', e.target.value)}
                           placeholder="메모 입력"
-                          style={{ padding:'5px 10px', borderRadius:'8px', fontSize:'12px', border:'1.5px solid #E2E8F0', outline:'none', width:'140px', background:'#F8FAFC', color:'#374151' }}
+                          className="att-text-input"
+                          style={{ padding:'5px 10px', borderRadius:'8px', fontSize:'12px', fontWeight:600, border:'1.5px solid #E2E8F0', outline:'none', width:'140px', background:'#F8FAFC', color:'#0F172A' }}
                           onFocus={e => { e.target.style.borderColor='#6366F1'; e.target.style.background='#fff' }}
                           onBlurCapture={e => { e.target.style.borderColor='#E2E8F0'; e.target.style.background='#F8FAFC' }} />
                       </td>
