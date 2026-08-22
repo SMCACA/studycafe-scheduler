@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import Layout from '../components/Layout'
 import { createClient } from '@supabase/supabase-js'
-import { Eye, Copy, CheckCheck, MessageSquare, ChevronDown, Loader, Link, Clock } from 'lucide-react'
+import { Eye, Copy, CheckCheck, MessageSquare, ChevronDown, Loader, Link } from 'lucide-react'
 import { sendNotificationMulti } from '../lib/sendNotification'
 import { loadTimeConfig, saveSnapshot, buildImageUrlFromId, DEFAULT_TIME_CONFIG } from '../lib/timeSlotConfig'
 
@@ -10,15 +10,48 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 )
 
+// ✅ [추가] 요일별 기본 교시 수 (DB에서 불러오기 전 초기값)
+//    비유: "기본 영업시간표" — DB 연결 전에도 최소한 이 설정으로 동작함
+const DEFAULT_SLOT_CONFIG = { mon:5, tue:5, wed:5, thu:5, fri:5, sat:10, sun:10 }
+
+// ✅ [수정] cfgKey 추가 (슬롯 설정 조회용 키)
+//    DAY_KEYS[i].cfgKey → DEFAULT_SLOT_CONFIG / DB schedule_slot_config 의 day_key 와 일치
 const DAY_KEYS = [
-  { key:'mon_slots', label:'월요일', short:'월', type:'weekday' },
-  { key:'tue_slots', label:'화요일', short:'화', type:'weekday' },
-  { key:'wed_slots', label:'수요일', short:'수', type:'weekday' },
-  { key:'thu_slots', label:'목요일', short:'목', type:'weekday' },
-  { key:'fri_slots', label:'금요일', short:'금', type:'weekday' },
-  { key:'sat_slots', label:'토요일', short:'토', type:'weekend' },
-  { key:'sun_slots', label:'일요일', short:'일', type:'weekend' },
+  { key:'mon_slots', label:'월요일', short:'월', type:'weekday', cfgKey:'mon' },
+  { key:'tue_slots', label:'화요일', short:'화', type:'weekday', cfgKey:'tue' },
+  { key:'wed_slots', label:'수요일', short:'수', type:'weekday', cfgKey:'wed' },
+  { key:'thu_slots', label:'목요일', short:'목', type:'weekday', cfgKey:'thu' },
+  { key:'fri_slots', label:'금요일', short:'금', type:'weekday', cfgKey:'fri' },
+  { key:'sat_slots', label:'토요일', short:'토', type:'weekend', cfgKey:'sat' },
+  { key:'sun_slots', label:'일요일', short:'일', type:'weekend', cfgKey:'sun' },
 ]
+
+// ✅ [추가] 교시 수 설정을 Supabase DB에서 불러오는 함수
+//    비유: "오늘 수업 교시 수 공지판"을 창고(DB)에서 가져오는 단계
+async function loadSlotConfigFromDB() {
+  try {
+    const { data, error } = await supabase
+      .from('schedule_slot_config')
+      .select('day_key, slot_count')
+    if (error || !data || data.length === 0) return { ...DEFAULT_SLOT_CONFIG }
+    const cfg = { ...DEFAULT_SLOT_CONFIG }
+    data.forEach(row => {
+      if (row.day_key in cfg) cfg[row.day_key] = Number(row.slot_count)
+    })
+    return cfg
+  } catch {
+    return { ...DEFAULT_SLOT_CONFIG }
+  }
+}
+
+// ✅ [추가] 회원권 종류에 따라 해당 요일이 허용되는지 확인
+//    비유: 평일 회원은 주말 자리에 앉을 수 없음
+const isDayAllowed = (membershipType, dayType) => {
+  if (membershipType === '풀') return true
+  if (membershipType === '평일' && dayType === 'weekday') return true
+  if (membershipType === '주말' && dayType === 'weekend') return true
+  return false
+}
 
 const dayStyle = (type, short) => {
   if (short === '일') return { bg:'#FEF2F2', color:'#EF4444' }
@@ -34,53 +67,90 @@ const RECIPIENT_OPTIONS = [
 ]
 
 export default function StudentViewer() {
-  const [students,   setStudents]   = useState([])
-  const [schedules,  setSchedules]  = useState([])
-  const [selectedId, setSelectedId] = useState('')
-  const [loading,    setLoading]    = useState(false)
-  const [copied,     setCopied]     = useState(false)
-  const [sending,    setSending]    = useState(false)
-  const [recipient,  setRecipient]  = useState('parent')   // ✅ 수신자 선택 (기본: 학부모)
-  const [sendResult, setSendResult] = useState(null)        // ✅ 발송 결과 메시지
-  const [timeConfig,  setTimeConfig]  = useState({...DEFAULT_TIME_CONFIG})  // 교시 → 시간 매핑 (Supabase)
-  const [linkCopied,  setLinkCopied]  = useState(false)            // 링크 복사 완료 여부
+  const [students,    setStudents]    = useState([])
+  const [schedules,   setSchedules]   = useState([])
+  const [slotConfig,  setSlotConfig]  = useState({...DEFAULT_SLOT_CONFIG}) // ✅ [추가] 교시 설정
+  const [selectedId,  setSelectedId]  = useState('')
+  const [loading,     setLoading]     = useState(false)
+  const [copied,      setCopied]      = useState(false)
+  const [sending,     setSending]     = useState(false)
+  const [recipient,   setRecipient]   = useState('parent')
+  const [sendResult,  setSendResult]  = useState(null)
+  const [timeConfig,  setTimeConfig]  = useState({...DEFAULT_TIME_CONFIG})
+  const [linkCopied,  setLinkCopied]  = useState(false)
+  const [copiedUrl,   setCopiedUrl]   = useState('')
 
   useEffect(() => { fetchAll() }, [])
 
   const fetchAll = async () => {
     setLoading(true)
-    const [{ data:sts }, { data:schs }, timeCfg] = await Promise.all([
+    // ✅ [수정] slotConfig도 함께 불러오기
+    const [{ data:sts }, { data:schs }, timeCfg, slotCfg] = await Promise.all([
       supabase.from('students').select('*').eq('status', '재원생').order('name'),
       supabase.from('schedules').select('*'),
-      loadTimeConfig(supabase),  // ✅ 시간 설정 Supabase에서 로드
+      loadTimeConfig(supabase),
+      loadSlotConfigFromDB(),   // ✅ 교시 설정 DB에서 로드
     ])
     if (sts)     setStudents(sts)
     if (schs)    setSchedules(schs)
     if (timeCfg) setTimeConfig(timeCfg)
+    if (slotCfg) setSlotConfig(slotCfg)  // ✅ 교시 설정 반영
     setLoading(false)
   }
 
   const selectedStudent  = students.find(s => s.id === selectedId)
   const selectedSchedule = schedules.find(s => s.student_id === selectedId)
 
+  // ──────────────────────────────────────────────────────────────
+  // ✅ [핵심 수정] 현재 slotConfig + 회원권을 기준으로 필터링된 슬롯 계산
+  //
+  //  비유: "출석부 정리" 단계
+  //    ① 평일 회원이면 주말 칸은 지운다 (회원권 필터)
+  //    ② 현재 교시 설정(1~5교시)을 넘는 번호는 지운다 (교시 수 필터)
+  //    ③ 숫자가 아닌 이상한 값도 지운다 (타입 안전)
+  //
+  //  이 과정을 거친 슬롯만 알림톡 시간표 이미지에 들어갑니다.
+  // ──────────────────────────────────────────────────────────────
+  const getFilteredSlots = (schedule) => {
+    if (!schedule) return {}
+    const membershipType = schedule.membership_type || '풀'
+    const filtered = {}
+
+    for (const day of DAY_KEYS) {
+      // ① 회원권에 해당하지 않는 요일 → 빈 배열
+      if (!isDayAllowed(membershipType, day.type)) {
+        filtered[day.key] = []
+        continue
+      }
+      // ② 현재 교시 설정 범위(1 ~ maxPeriod) 내의 정수만 허용
+      const maxPeriod = slotConfig[day.cfgKey] || 5
+      const rawSlots  = schedule[day.key] || []
+      filtered[day.key] = rawSlots
+        .filter(p => Number.isFinite(p) && Number.isInteger(p) && p >= 1 && p <= maxPeriod)
+        .sort((a, b) => a - b)
+    }
+    return filtered
+  }
+
+  // ✅ [수정] 필터링된 슬롯을 활성 요일/교시 계산에 사용
+  const filteredSlots = selectedSchedule ? getFilteredSlots(selectedSchedule) : {}
+
   const activeDays = selectedSchedule
     ? DAY_KEYS.filter(d => {
-        const slots = selectedSchedule[d.key]
+        const slots = filteredSlots[d.key]
         return Array.isArray(slots) && slots.length > 0
       })
     : []
 
   const totalPeriods = activeDays.reduce((sum, d) =>
-    sum + (selectedSchedule?.[d.key]?.length || 0), 0)
+    sum + (filteredSlots[d.key]?.length || 0), 0)
 
-  // 관리자 참고용 링크는 "링크 복사" 버튼 누를 때 즉석에서 생성합니다 (아래 handleLinkCopy)
-  const [copiedUrl, setCopiedUrl] = useState('')   // 마지막으로 만든 이미지 URL 보관용
-
-  // 링크 복사: 그 자리에서 창고에 저장 → 짧은 ID → 짧은 URL 복사
+  // ✅ [수정] 링크 복사 시에도 필터링된 슬롯 사용
   const handleLinkCopy = async () => {
     if (!selectedStudent || !selectedSchedule) return
     try {
-      const id  = await saveSnapshot(selectedStudent, selectedSchedule, timeConfig)
+      const filteredSchedule = { ...selectedSchedule, ...filteredSlots }
+      const id  = await saveSnapshot(selectedStudent, filteredSchedule, timeConfig)
       const url = buildImageUrlFromId(id)
       setCopiedUrl(url)
       await navigator.clipboard.writeText(url)
@@ -114,7 +184,6 @@ export default function StudentViewer() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  // ✅ 수신자에 따라 전화번호 목록 결정
   const getPhoneNumbers = () => {
     if (!selectedStudent) return []
     const phones = []
@@ -136,17 +205,19 @@ export default function StudentViewer() {
       return
     }
 
-    // ✅ [핵심] 발송 직전에 시간표를 창고(Supabase)에 저장하고 짧은 ID를 받음
-    //    → 이렇게 하면 버튼 URL이 https://도메인/api/schedule-image?id=k7f3a9b2 로 아주 짧아짐
-    //    (예전엔 데이터를 통째로 Base64로 넣어 600~700자 → 카카오 한도 초과 → 3109)
     setSending(true)
     setSendResult(null)
 
     let linkWithoutProtocol
     try {
-      const id  = await saveSnapshot(selectedStudent, selectedSchedule, timeConfig)
+      // ✅ [핵심 수정] 필터링된 슬롯(현재 교시 설정 + 회원권 기준)으로 스냅샷 저장
+      //    - 설정된 교시 수(slotConfig) 초과 데이터 제거
+      //    - 회원권 범위 외 요일 데이터 제거
+      //    이렇게 해야 알림톡 시간표 이미지가 현재 저장된 스케줄과 정확히 일치합니다.
+      const filteredSchedule = { ...selectedSchedule, ...filteredSlots }
+      const id  = await saveSnapshot(selectedStudent, filteredSchedule, timeConfig)
       const imageUrl = buildImageUrlFromId(id)
-      // 솔라피 규정: 버튼 URL을 변수로 등록할 때 https:// 는 고정영역이라 변수엔 뒷부분만 넣음
+      // 솔라피 규정: 버튼 URL 변수에는 https:// 제외한 뒷부분만
       linkWithoutProtocol = imageUrl.replace(/^https?:\/\//, '')
     } catch (err) {
       setSendResult({ ok:false, msg:`시간표 저장 실패: ${err.message}` })
@@ -154,22 +225,19 @@ export default function StudentViewer() {
       return
     }
 
-    // ✅ 알림톡 템플릿 변수 (#{변수명} 자리에 들어갈 실제 값들)
-    // ⚠️ 솔라피 템플릿의 변수와 "정확히 일치"해야 발송됩니다!
-    // 템플릿 변수 4개: #{학생이름}, #{좌석번호}, #{멤버십}, #{시간표링크}(버튼 URL용)
+    // ✅ 알림톡 템플릿 변수
     const variables = {
       '#{학생이름}':     selectedStudent.name,
       '#{좌석번호}':     String(selectedStudent.seat_number ?? selectedSchedule?.seat_number ?? '미지정'),
       '#{멤버십}':       selectedSchedule?.membership_type || '–',
-      '#{시간표링크}':   linkWithoutProtocol,   // ← 이제 아주 짧은 URL (id 방식)
+      '#{시간표링크}':   linkWithoutProtocol,
     }
 
-    // ✅ 알림톡 버튼 (시간표 이미지 링크 버튼)
-    //    템플릿 버튼명은 이모지까지 동일해야 함: 📅 시간표 확인하기
+    // ✅ 알림톡 버튼
     const buttons = [{
-      buttonType: 'WL',                       // WL = Web Link (웹 링크 버튼 유형)
+      buttonType: 'WL',
       buttonName: '📅 시간표 확인하기',
-      linkMo: 'https://#{시간표링크}',          // 템플릿 등록값 그대로 (변수로 치환됨)
+      linkMo: 'https://#{시간표링크}',
       linkPc: 'https://#{시간표링크}',
     }]
 
@@ -240,24 +308,34 @@ export default function StudentViewer() {
                 }}>{selectedSchedule.membership_type} 멤버십</span>
               </div>
 
+              {/* ✅ [수정] 필터링된 슬롯(filteredSlots)으로 활성 요일 표시 */}
               <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
-                {activeDays.map(d => {
-                  const slots = (selectedSchedule[d.key] || []).sort((a,b)=>a-b)
-                  const st = dayStyle(d.type, d.short)
-                  return (
-                    <div key={d.key} style={{ background:st.bg, borderRadius:'12px', padding:'10px 14px', minWidth:'90px' }}>
-                      <p style={{ fontSize:'11px', fontWeight:700, color:st.color, margin:'0 0 6px' }}>{d.label}</p>
-                      <div style={{ display:'flex', gap:'4px', flexWrap:'wrap' }}>
-                        {slots.map(p => (
-                          <span key={p} style={{ display:'inline-block', padding:'2px 8px', borderRadius:'999px', fontSize:'11px', fontWeight:700, background:'rgba(255,255,255,0.7)', color:st.color }}>
-                            {p}교시
-                          </span>
-                        ))}
+                {activeDays.length === 0 ? (
+                  <p style={{ fontSize:'13px', color:'#94A3B8' }}>현재 설정된 교시 범위 내에 등원 스케줄이 없어요</p>
+                ) : (
+                  activeDays.map(d => {
+                    const slots = filteredSlots[d.key]
+                    const st = dayStyle(d.type, d.short)
+                    return (
+                      <div key={d.key} style={{ background:st.bg, borderRadius:'12px', padding:'10px 14px', minWidth:'90px' }}>
+                        <p style={{ fontSize:'11px', fontWeight:700, color:st.color, margin:'0 0 6px' }}>{d.label}</p>
+                        <div style={{ display:'flex', gap:'4px', flexWrap:'wrap' }}>
+                          {slots.map(p => (
+                            <span key={p} style={{ display:'inline-block', padding:'2px 8px', borderRadius:'999px', fontSize:'11px', fontWeight:700, background:'rgba(255,255,255,0.7)', color:st.color }}>
+                              {p}교시
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )
-                })}
+                    )
+                  })
+                )}
               </div>
+
+              {/* ✅ [추가] 필터링 안내 메시지 */}
+              <p style={{ fontSize:'11px', color:'#94A3B8', marginTop:'12px' }}>
+                💡 현재 교시 설정(평일 최대 {slotConfig.mon}교시) 및 {selectedSchedule.membership_type} 회원권 기준으로 표시됩니다
+              </p>
             </div>
 
             {/* 메시지 미리보기 */}
@@ -271,7 +349,7 @@ export default function StudentViewer() {
               }}>{msgText}</pre>
             </div>
 
-            {/* ✅ 수신자 선택 + 발송 버튼 */}
+            {/* 수신자 선택 + 발송 버튼 */}
             <div style={{ background:'#fff', borderRadius:'16px', border:'1px solid #E2E8F0', padding:'20px', boxShadow:'0 1px 4px rgba(0,0,0,0.04)' }}>
               <p style={{ fontSize:'12px', fontWeight:700, color:'#374151', marginBottom:'12px' }}>📤 발송 설정</p>
 
@@ -279,7 +357,6 @@ export default function StudentViewer() {
               <div style={{ display:'flex', gap:'8px', marginBottom:'12px' }}>
                 {RECIPIENT_OPTIONS.map(opt => {
                   const isActive = recipient === opt.value
-                  // 전화번호 유무 확인
                   const hasPhone = opt.value === 'parent'
                     ? !!selectedStudent.parent_phone
                     : opt.value === 'student'
@@ -371,12 +448,12 @@ export default function StudentViewer() {
                 }}>
                   {copied ? <><CheckCheck size={16} style={{ color:'#059669' }} /> 복사됨!</> : <><Copy size={16} /> 메시지 복사</>}
                 </button>
-                <button onClick={handleSend} disabled={sending || getPhoneNumbers().length===0} style={{
+                <button onClick={handleSend} disabled={sending || getPhoneNumbers().length===0 || activeDays.length===0} style={{
                   display:'flex', alignItems:'center', justifyContent:'center', gap:'8px',
                   flex:1, padding:'12px', borderRadius:'12px', border:'none',
-                  background: (sending || getPhoneNumbers().length===0) ? '#A5B4FC' : 'linear-gradient(135deg,#6366F1,#7C3AED)',
+                  background: (sending || getPhoneNumbers().length===0 || activeDays.length===0) ? '#A5B4FC' : 'linear-gradient(135deg,#6366F1,#7C3AED)',
                   fontSize:'14px', fontWeight:700, color:'#fff',
-                  cursor: (sending || getPhoneNumbers().length===0) ? 'not-allowed' : 'pointer',
+                  cursor: (sending || getPhoneNumbers().length===0 || activeDays.length===0) ? 'not-allowed' : 'pointer',
                   boxShadow:'0 4px 14px rgba(99,102,241,0.35)',
                 }}>
                   {sending
@@ -385,6 +462,14 @@ export default function StudentViewer() {
                   }
                 </button>
               </div>
+
+              {/* ✅ [추가] 발송 불가 안내 (필터링 결과 활성 교시가 없는 경우) */}
+              {activeDays.length === 0 && (
+                <p style={{ fontSize:'12px', color:'#EF4444', marginTop:'10px', textAlign:'center' }}>
+                  ⚠️ 현재 교시 설정 범위 내에 등원 스케줄이 없어 발송할 수 없어요.<br />
+                  스케줄 관리 페이지에서 스케줄을 확인해주세요.
+                </p>
+              )}
             </div>
           </>
         )}
