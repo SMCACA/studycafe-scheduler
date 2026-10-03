@@ -714,7 +714,7 @@ function NotifyPhonesModal({ initial, ready, onClose, onSaved, showToast }) {
     setTesting(true); setError('')
     try {
       const json = await callApi('PATCH', { action: 'test-notify' })
-      showToast(`테스트 문자를 ${json.sent}개 번호로 보냈어요. 휴대폰을 확인해주세요 📩`)
+      showToast(`솔라피에 ${json.sent}건 접수됐어요 📩 안 오면 [발송 결과 확인]에서 실제 상태를 눌러보세요`)
     } catch (err) { setError(err.message) }
     setTesting(false)
   }
@@ -725,8 +725,8 @@ function NotifyPhonesModal({ initial, ready, onClose, onSaved, showToast }) {
       <div style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '440px', boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}>
         <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#0F172A' }}>📱 새 신청자 알림 받을 번호</h2>
-            <p style={{ margin: '4px 0 0', fontSize: '12.5px', color: '#94A3B8' }}>신청서가 들어오면 이 번호들로 문자가 가요 (최대 5개)</p>
+            <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#0F172A' }}>📱 새 신청자 알림톡 받을 번호</h2>
+            <p style={{ margin: '4px 0 0', fontSize: '12.5px', color: '#94A3B8' }}>신청서가 들어오면 이 번호들의 카카오톡으로 알림이 가요 (최대 5개)</p>
           </div>
           <button onClick={onClose} style={{ border: 'none', background: '#F1F5F9', borderRadius: '10px', width: '34px', height: '34px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <X size={17} color="#64748B" />
@@ -742,7 +742,7 @@ function NotifyPhonesModal({ initial, ready, onClose, onSaved, showToast }) {
 
           {phones.length === 0 ? (
             <div style={{ padding: '16px', borderRadius: '12px', border: '1.5px dashed #CBD5E1', color: '#94A3B8', fontSize: '13px', textAlign: 'center' }}>
-              등록된 번호가 없어요 — 지금은 문자가 안 가요
+              등록된 번호가 없어요 — 지금은 알림이 안 가요
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -772,7 +772,7 @@ function NotifyPhonesModal({ initial, ready, onClose, onSaved, showToast }) {
             opacity: testing || changed || phones.length === 0 ? 0.5 : 1,
             cursor: testing || changed || phones.length === 0 ? 'not-allowed' : 'pointer',
           }}>
-            <Send size={14} /> {testing ? '보내는 중…' : changed ? '저장 후 테스트할 수 있어요' : '저장된 번호로 테스트 문자 보내기'}
+            <Send size={14} /> {testing ? '보내는 중…' : changed ? '저장 후 테스트할 수 있어요' : '저장된 번호로 테스트 알림 보내기'}
           </button>
         </div>
 

@@ -9,7 +9,9 @@
 //   - PATCH {action:'convert'} : 신청자를 학생으로 등록 + 스케줄 등록 → 로그인한 관리자만
 //   - DELETE {ids:[...]} : 신청서 삭제 (테스트·불필요한 것 정리)    → 로그인한 관리자만
 //
-// 📱 신청서가 접수되면 관리자 휴대폰으로 "새 신청자" 문자를 보내요 (솔라피 사용)
+// 📱 신청서가 접수되면 관리자 휴대폰으로 "새 신청자" 알림톡을 보내요 (솔라피 사용)
+//    - 알림톡 템플릿 ID: Vercel 환경변수 SOLAPI_TEMPLATE_ID_APPLY (카카오 승인받은 양식)
+//    - 템플릿 ID가 없으면 예전처럼 일반 문자(SMS/LMS)로 보내요
 //    받을 번호: 신청자 명단 화면의 [📱 알림 받을 번호]에서 설정 (DB app_settings 테이블에 저장)
 //    - PATCH {action:'set-notify-phones', phones:[...]} : 번호 저장   → 관리자만
 //    - PATCH {action:'test-notify'}                     : 테스트 문자 → 관리자만
@@ -300,6 +302,21 @@ async function handleTestNotify(req, res) {
 }
 
 // 반환: 번호별 발송 결과 목록 (보낼 번호가 없으면 빈 목록)
+// 알림톡 변수 (카카오에 승인받은 템플릿의 #{...} 자리에 들어갈 값)
+// ⚠️ 템플릿에 적은 변수 이름과 글자 하나까지 똑같아야 해요
+function buildNotifyVariables(app, test) {
+  const now = new Date().toLocaleString('ko-KR', {
+    timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+  })
+  return {
+    '#{이름}':     test ? '테스트' : app.name,
+    '#{학년}':     test ? '-' : `${app.grade}${app.is_academy_student ? ' (SMC 재원)' : ''}`,
+    '#{이용권}':   test ? '-' : (MEMBERSHIP_NAME[app.membership_type] || '-'),
+    '#{연락처}':   test ? '(테스트 발송이에요)' : (app.parent_phone || app.student_phone || '-'),
+    '#{접수일시}': now,
+  }
+}
+
 async function notifyNewApplicant(app, { test = false } = {}) {
   const apiKey    = process.env.SOLAPI_API_KEY
   const apiSecret = process.env.SOLAPI_API_SECRET
@@ -316,6 +333,16 @@ async function notifyNewApplicant(app, { test = false } = {}) {
     ? `[SMC스터디카페] 테스트 문자예요.\n새 신청서가 들어오면 이 번호로 알려드려요.`
     : buildNotifyText(app)
 
+  // 알림톡 설정이 있으면 알림톡, 없으면 일반 문자
+  const pfId       = process.env.SOLAPI_PF_ID
+  const templateId = process.env.SOLAPI_TEMPLATE_ID_APPLY
+  const kakaoOptions = (pfId && templateId) ? {
+    pfId,
+    templateId,
+    variables: buildNotifyVariables(app, test),
+    disableSms: false,   // 알림톡 실패 시 문자로 대체 (문자는 번호도용차단 해지 전엔 안 가요)
+  } : null
+
   return await Promise.all(targets.map(async to => {
     // 5초 안에 응답이 없으면 포기 (신청자가 오래 기다리지 않게)
     const controller = new AbortController()
@@ -326,7 +353,7 @@ async function notifyNewApplicant(app, { test = false } = {}) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: makeSolapiAuth(apiKey, apiSecret) },
         // type을 안 적으면 솔라피가 글자 수를 보고 SMS/LMS(장문)를 자동으로 골라요
-        body: JSON.stringify({ message: { to, from, text } }),
+        body: JSON.stringify({ message: kakaoOptions ? { to, from, text, kakaoOptions } : { to, from, text } }),
         signal: controller.signal,
       })
       const d = await r.json().catch(() => ({}))

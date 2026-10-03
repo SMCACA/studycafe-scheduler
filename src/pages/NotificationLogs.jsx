@@ -21,7 +21,7 @@ const TYPE_INFO = {
   schedule: { label: '스케줄 알림톡', icon: Eye,           bg: '#EEF2FF', color: '#6366F1' },
   penalty:  { label: '벌점 알림톡',   icon: AlertTriangle,  bg: '#FFF1F2', color: '#E11D48' },
   reward:   { label: '상점 알림톡',   icon: Star,           bg: '#FFFBEB', color: '#D97706' },
-  apply:    { label: '신청 접수 문자', icon: UserPlus,      bg: '#ECFDF5', color: '#059669' },  // ✅ 새 신청자 알림 (관리자에게)
+  apply:    { label: '신청 접수 알림', icon: UserPlus,      bg: '#ECFDF5', color: '#059669' },  // ✅ 새 신청자 알림 (관리자에게)
 }
 
 function formatDateTime(iso) {
