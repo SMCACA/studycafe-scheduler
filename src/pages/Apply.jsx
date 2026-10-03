@@ -9,6 +9,15 @@
 
 import { useState, useEffect } from 'react'
 import SlotPicker from '../components/SlotPicker'
+
+// ⚠️ [스크롤 수정] index.css에서 #root가 "화면 한 장 높이 + 넘치면 숨김"으로 고정돼 있어요.
+//    (관리자 화면은 Layout 안에 자체 스크롤이 있어서 괜찮지만, 신청서 화면엔 없었어요)
+//    그래서 이 페이지 바깥 상자 자체를 "스크롤 되는 상자"로 만들어요.
+//    비유: 액자(#root) 크기는 그대로 두고, 그 안에 두루마리(스크롤)를 넣은 것
+const pageScroll = {
+  width:'100%', height:'100%', overflowY:'auto', WebkitOverflowScrolling:'touch',
+  background:'#F8FAFC',
+}
 import {
   MEMBERSHIP_OPTIONS, DEFAULT_SLOT_CONFIG, emptySlots, cleanSlots, countSlots,
 } from '../lib/applySchedule'
@@ -120,7 +129,7 @@ export default function Apply() {
   // ✅ 제출 완료 화면 — 신청자가 보는 마지막 화면
   if (submitted) {
     return (
-      <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#F8FAFC', padding:'24px' }}>
+      <div style={{ ...pageScroll, display:'flex', alignItems:'center', justifyContent:'center', padding:'24px' }}>
         <div style={{ background:'#fff', borderRadius:'20px', padding:'40px 28px', textAlign:'center', maxWidth:'400px', boxShadow:'0 8px 24px rgba(0,0,0,0.06)' }}>
           <div style={{ fontSize:'40px', marginBottom:'12px' }}>✅</div>
           <h2 style={{ fontSize:'18px', fontWeight:700, color:'#0F172A', marginBottom:'8px' }}>신청이 완료됐어요</h2>
@@ -133,7 +142,7 @@ export default function Apply() {
   }
 
   return (
-    <div style={{ minHeight:'100vh', background:'#F8FAFC', padding:'24px 16px' }}>
+    <div style={{ ...pageScroll, padding:'24px 16px 100px' }}>
       <div style={{ maxWidth:'520px', margin:'0 auto', background:'#fff', borderRadius:'20px', boxShadow:'0 8px 24px rgba(0,0,0,0.06)', overflow:'hidden' }}>
 
         <div style={{ padding:'28px 24px 16px', borderBottom:'1px solid #F1F5F9' }}>

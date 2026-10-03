@@ -21,7 +21,7 @@ import {
   emptySlots, cleanSlots, countSlots, summarizeSlots,
 } from '../lib/applySchedule'
 import {
-  UserPlus, RefreshCw, Search, CheckCircle2, XCircle, Copy, Link2, X, AlertTriangle, UserCheck, Clock,
+  UserPlus, RefreshCw, Search, CheckCircle2, XCircle, Copy, Link2, X, AlertTriangle, UserCheck, Clock, Trash2,
 } from 'lucide-react'
 
 const cell = { border: '1px solid #E2E8F0', padding: '11px 14px', verticalAlign: 'middle' }
@@ -88,6 +88,8 @@ export default function Applications() {
   const [filter,     setFilter]     = useState('전체')
   const [keyword,    setKeyword]    = useState('')
   const [savingId,   setSavingId]   = useState(null)
+  const [selected,   setSelected]   = useState(() => new Set())   // 체크한 신청서 id 목록
+  const [deleting,   setDeleting]   = useState(false)
   const [toast,      setToast]      = useState(null)
   const [converting, setConverting] = useState(null)   // { applicant, as } — 전환 창 열림
 
@@ -133,6 +135,39 @@ export default function Applications() {
     showToast(`${updated.name} 학생을 ${as}(으)로 등록하고 스케줄까지 연동했어요 🎉`)
   }
 
+  // ── 삭제 (테스트·불필요한 신청서 정리용) ──
+  // ⚠️ 신청서 기록만 지워요. 이미 학생으로 전환된 경우, 학생 관리·스케줄의 학생은 그대로 남아요.
+  const handleDelete = async (ids) => {
+    const targets = applicants.filter(a => ids.includes(a.id))
+    if (targets.length === 0) return
+    const names = targets.slice(0, 5).map(a => a.name).join(', ') + (targets.length > 5 ? ` 외 ${targets.length - 5}명` : '')
+    const convertedCount = targets.filter(a => a.converted_student_id).length
+    const msg =
+      `신청서 ${targets.length}건을 삭제할까요?\n(${names})\n\n삭제하면 되돌릴 수 없어요.` +
+      (convertedCount ? `\n\n※ 이 중 ${convertedCount}건은 이미 학생으로 등록됐어요. 신청서만 지워지고, 학생 관리·스케줄의 학생은 그대로 남아요.` : '')
+    if (!window.confirm(msg)) return
+
+    setDeleting(true)
+    try {
+      const json = await callApi('DELETE', { ids: targets.map(a => a.id) })
+      const gone = new Set((json.deletedIds || []).map(String))
+      setApplicants(prev => prev.filter(a => !gone.has(String(a.id))))
+      setSelected(new Set())
+      showToast(`신청서 ${gone.size}건을 삭제했어요 🗑️`)
+    } catch (err) {
+      showToast('삭제 실패: ' + err.message, 'error')
+    }
+    setDeleting(false)
+  }
+
+  const toggleSelect = (id) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
   // ── 신청서 링크 복사 (학부모에게 보낼 때) ──
   const copyApplyLink = async () => {
     const url = `${window.location.origin}/apply`
@@ -162,7 +197,7 @@ export default function Applications() {
     })
   }, [applicants, filter, keyword])
 
-  const HEADERS = ['신청일시', '이름', '학년', 'SMC 재원', '학교', '학부모 연락처', '학생 연락처', '이용권', '희망 스케줄', '희망 시작일', '요청사항', '상태', '학생 전환']
+  const HEADERS = ['신청일시', '이름', '학년', 'SMC 재원', '학교', '학부모 연락처', '학생 연락처', '이용권', '희망 스케줄', '희망 시작일', '요청사항', '상태', '학생 전환', '삭제']
 
   return (
     <Layout>
@@ -195,6 +230,13 @@ export default function Applications() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
+            {selected.size > 0 && (
+              <button onClick={() => handleDelete([...selected])} disabled={deleting} style={{
+                ...btnStyle, border: '1.5px solid #FCA5A5', background: '#FEF2F2', color: '#DC2626',
+              }}>
+                <Trash2 size={15} /> {deleting ? '삭제 중…' : `선택 삭제 (${selected.size})`}
+              </button>
+            )}
             <button onClick={copyApplyLink} style={btnStyle}>
               <Link2 size={15} /> 신청서 링크 복사
             </button>
@@ -211,7 +253,7 @@ export default function Applications() {
             {['전체', ...STATUS_LIST].map(s => {
               const active = filter === s
               return (
-                <button key={s} onClick={() => setFilter(s)} style={{
+                <button key={s} onClick={() => { setFilter(s); setSelected(new Set()) }} style={{
                   padding: '8px 14px', borderRadius: '999px', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
                   border: `1.5px solid ${active ? '#6366F1' : '#E2E8F0'}`,
                   background: active ? '#6366F1' : '#fff',
@@ -226,7 +268,7 @@ export default function Applications() {
             <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
             <input
               value={keyword}
-              onChange={e => setKeyword(e.target.value)}
+              onChange={e => { setKeyword(e.target.value); setSelected(new Set()) }}
               placeholder="이름·학교·연락처 검색"
               style={{
                 padding: '9px 14px 9px 34px', borderRadius: '12px', border: '1.5px solid #E2E8F0',
@@ -245,6 +287,12 @@ export default function Applications() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
             <thead>
               <tr>
+                <th style={{ ...cell, background: '#F8FAFC', width: '36px', textAlign: 'center' }}>
+                  <input type="checkbox" title="보이는 신청서 전체 선택"
+                    checked={visible.length > 0 && visible.every(a => selected.has(a.id))}
+                    onChange={e => setSelected(e.target.checked ? new Set(visible.map(a => a.id)) : new Set())}
+                    style={{ cursor: 'pointer', width: '15px', height: '15px' }} />
+                </th>
                 {HEADERS.map(h => (
                   <th key={h} style={{
                     ...cell, background: '#F8FAFC',
@@ -256,9 +304,9 @@ export default function Applications() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={HEADERS.length} style={{ ...cell, textAlign: 'center', padding: '64px 0', color: '#94A3B8' }}>불러오는 중...</td></tr>
+                <tr><td colSpan={HEADERS.length + 1} style={{ ...cell, textAlign: 'center', padding: '64px 0', color: '#94A3B8' }}>불러오는 중...</td></tr>
               ) : visible.length === 0 ? (
-                <tr><td colSpan={HEADERS.length} style={{ ...cell, textAlign: 'center', padding: '64px 0', color: '#94A3B8' }}>
+                <tr><td colSpan={HEADERS.length + 1} style={{ ...cell, textAlign: 'center', padding: '64px 0', color: '#94A3B8' }}>
                   {applicants.length === 0 ? '아직 들어온 신청서가 없어요' : '조건에 맞는 신청자가 없어요'}
                 </td></tr>
               ) : (
@@ -268,7 +316,11 @@ export default function Applications() {
                   const converted = !!a.converted_student_id
                   const summary = summarizeSlots(a.desired_slots)
                   return (
-                    <tr key={a.id} style={{ background: idx % 2 === 0 ? '#fff' : '#FAFBFF', opacity: status === '취소' ? 0.6 : 1 }}>
+                    <tr key={a.id} style={{ background: selected.has(a.id) ? '#FEF2F2' : idx % 2 === 0 ? '#fff' : '#FAFBFF', opacity: status === '취소' ? 0.6 : 1 }}>
+                      <td style={{ ...cell, textAlign: 'center' }}>
+                        <input type="checkbox" checked={selected.has(a.id)} onChange={() => toggleSelect(a.id)}
+                          style={{ cursor: 'pointer', width: '15px', height: '15px' }} />
+                      </td>
                       <td style={{ ...cell, color: '#64748B', whiteSpace: 'nowrap', fontSize: '12px' }}>{formatDateTime(a.created_at)}</td>
                       <td style={{ ...cell, fontWeight: 700, color: '#0F172A', whiteSpace: 'nowrap' }}>{a.name}</td>
                       <td style={{ ...cell, whiteSpace: 'nowrap' }}>{a.grade || '–'}</td>
@@ -345,6 +397,15 @@ export default function Applications() {
                             ))}
                           </div>
                         )}
+                      </td>
+                      <td style={{ ...cell, textAlign: 'center' }}>
+                        <button onClick={() => handleDelete([a.id])} disabled={deleting} title="이 신청서 삭제" style={{
+                          border: 'none', background: 'transparent', cursor: 'pointer', color: '#CBD5E1', padding: '4px', display: 'inline-flex',
+                        }}
+                          onMouseEnter={e => { e.currentTarget.style.color = '#EF4444' }}
+                          onMouseLeave={e => { e.currentTarget.style.color = '#CBD5E1' }}>
+                          <Trash2 size={15} />
+                        </button>
                       </td>
                     </tr>
                   )

@@ -7,6 +7,7 @@
 //   - GET                : 신청자 명단 보여주기               → 로그인한 관리자만
 //   - PATCH {status}     : 처리 상태 도장 찍기               → 로그인한 관리자만
 //   - PATCH {action:'convert'} : 신청자를 학생으로 등록 + 스케줄 등록 → 로그인한 관리자만
+//   - DELETE {ids:[...]} : 신청서 삭제 (테스트·불필요한 것 정리)    → 로그인한 관리자만
 //
 // ⚠️ 왜 파일 하나에 다 모았나요?
 //    Vercel 무료(Hobby) 요금제는 api 폴더 파일(=서버 함수)을 최대 12개까지만 허용해요.
@@ -133,11 +134,12 @@ export default async function handler(req, res) {
 
     if (req.method === 'POST') return await handleSubmit(req, res)
 
-    if (req.method === 'GET' || req.method === 'PATCH') {
+    if (req.method === 'GET' || req.method === 'PATCH' || req.method === 'DELETE') {
       if (!(await isLoggedInAdmin(req))) {
         return res.status(401).json({ error: '로그인이 필요해요. 다시 로그인해주세요.' })
       }
       if (req.method === 'GET') return await handleList(req, res)
+      if (req.method === 'DELETE') return await handleDelete(req, res)
       if (req.body?.action === 'convert') return await handleConvert(req, res)
       return await handleStatus(req, res)
     }
@@ -391,4 +393,25 @@ async function handleConvert(req, res) {
   }
 
   return res.status(200).json({ success: true, applicant: updRows[0], student, schedule })
+}
+
+// ────────────────────────────────────────────────
+// 5) DELETE {ids:[...]} : 신청서 삭제 (관리자만)
+// ────────────────────────────────────────────────
+// ⚠️ applicants(신청서) 기록만 지워요.
+//    이미 학생으로 전환된 신청서라도 students(학생)·schedules(스케줄)는 건드리지 않아요.
+//    (비유: 접수 서류철에서 신청서 한 장을 버려도, 이미 만든 학생 명부는 그대로)
+async function handleDelete(req, res) {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(v => v !== null && v !== undefined && v !== '') : []
+  if (ids.length === 0) return res.status(400).json({ error: '삭제할 신청서를 골라주세요' })
+  if (ids.length > 200) return res.status(400).json({ error: '한 번에 200건까지만 삭제할 수 있어요' })
+
+  const { data, error } = await supabase
+    .from('applicants')
+    .delete()
+    .in('id', ids)
+    .select('id')
+  if (error) throw error
+
+  return res.status(200).json({ success: true, deletedIds: (data || []).map(r => r.id) })
 }
