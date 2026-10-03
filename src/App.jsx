@@ -11,6 +11,7 @@ import StudentPoints from './pages/StudentPoints'
 import StaffManagement from './pages/StaffManagement'
 import PublicScheduleView from './pages/PublicScheduleView'
 import Apply from './pages/Apply'
+import Applications from './pages/Applications'
 import NotificationLogs from './pages/NotificationLogs'
 import Manuals from './pages/Manuals'
 import Calendar from './pages/Calendar'
@@ -65,6 +66,10 @@ export default function App() {
 
         <Route path="/manuals" element={
           <ProtectedRoute><Manuals /></ProtectedRoute>
+        } />
+
+        <Route path="/applications" element={
+          <ProtectedRoute><Applications /></ProtectedRoute>
         } />
 
         <Route path="/calendar" element={
