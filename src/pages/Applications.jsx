@@ -1,20 +1,27 @@
 // ================================================================
-// 📁 src/pages/Applications.jsx  (4단계 - 관리자용 신청자 명단)
+// 📁 src/pages/Applications.jsx  (관리자용 신청자 명단 + 학생 전환)
 // ================================================================
 // 비유: 접수 창구에 쌓인 "신청서 바구니"를 관리자가 한 장씩 넘겨보는 화면이에요.
-//   - 위쪽 탭: 상태별로 바구니를 나눠 보기 (대기중 / 연락완료 / 등록완료 / 취소)
-//   - 검색창: 이름·학교·연락처로 찾기
-//   - 행마다 상태 드롭다운: 바꾸면 바로 서버에 저장돼요
+//   - 위쪽 탭: 상태별로 나눠 보기 (대기중 / 연락완료 / 등록완료 / 취소)
+//   - 행마다 [재원생 전환] [예비원생 전환] 버튼
+//       → 확인 창에서 이용권·교시·좌석·첫등원일을 확인/수정하고 등록하면
+//         ① 학생 관리(students)에 학생 추가  ② 스케줄 관리(schedules)에 시간표 추가
+//         ③ 신청서는 '등록완료'로 잠김 (두 번 등록되는 것 방지)
 //
-// 데이터는 /api/submit-application 으로 GET(조회) / PATCH(상태 변경) 요청을 보내서 받아요.
-// 이때 "로그인 출입증(토큰)"을 같이 보내야 서버가 관리자라고 믿어줘요.
+// 데이터는 /api/submit-application 으로 요청해요. (로그인 출입증(토큰)을 같이 보냄)
 // ================================================================
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import Layout from '../components/Layout'
+import SlotPicker from '../components/SlotPicker'
 import { supabase } from '../lib/supabaseClient'
+import { fetchSeatConfig } from '../lib/seatConfig'
 import {
-  UserPlus, RefreshCw, Search, CheckCircle2, XCircle, Copy, Link2,
+  MEMBERSHIP_OPTIONS, MEMBERSHIP_LABEL, DEFAULT_SLOT_CONFIG,
+  emptySlots, cleanSlots, countSlots, summarizeSlots,
+} from '../lib/applySchedule'
+import {
+  UserPlus, RefreshCw, Search, CheckCircle2, XCircle, Copy, Link2, X, AlertTriangle, UserCheck, Clock,
 } from 'lucide-react'
 
 const cell = { border: '1px solid #E2E8F0', padding: '11px 14px', verticalAlign: 'middle' }
@@ -27,6 +34,13 @@ const STATUS_INFO = {
   '취소':     { bg: '#F1F5F9', color: '#64748B', border: '#CBD5E1' },
 }
 const STATUS_LIST = Object.keys(STATUS_INFO)
+const MANUAL_STATUS = ['대기중', '연락완료', '취소']   // 드롭다운으로 바꿀 수 있는 상태
+
+// 전환 종류별 색상 (학생 관리 화면과 동일)
+const AS_STYLE = {
+  재원생:   { bg: '#ECFDF5', color: '#059669', border: '#A7F3D0', solid: '#10B981' },
+  예비원생: { bg: '#EEF2FF', color: '#6366F1', border: '#C7D2FE', solid: '#6366F1' },
+}
 
 function formatDateTime(iso) {
   if (!iso) return '–'
@@ -37,7 +51,7 @@ function formatDateTime(iso) {
 
 function formatDate(str) {
   if (!str) return '–'
-  return str.replaceAll('-', '.')
+  return String(str).slice(0, 10).replaceAll('-', '.')
 }
 
 // 로그인 출입증(토큰)을 꺼내서 요청 머리말(헤더)에 붙여주는 도우미 함수
@@ -49,27 +63,47 @@ async function authHeaders() {
   }
 }
 
+// 서버에 요청 보내고 결과 받기 (실패하면 서버가 보낸 이유를 그대로 에러로)
+async function callApi(method, body) {
+  const res = await fetch('/api/submit-application', {
+    method,
+    headers: await authHeaders(),
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const err = new Error(json.error || `서버 응답 ${res.status}`)
+    err.status = res.status
+    err.data = json
+    throw err
+  }
+  return json
+}
+
 export default function Applications() {
   const [applicants, setApplicants] = useState([])
+  const [slotConfig, setSlotConfig] = useState(DEFAULT_SLOT_CONFIG)
+  const [timeConfig, setTimeConfig] = useState(null)
   const [loading,    setLoading]    = useState(true)
   const [filter,     setFilter]     = useState('전체')
   const [keyword,    setKeyword]    = useState('')
   const [savingId,   setSavingId]   = useState(null)
   const [toast,      setToast]      = useState(null)
+  const [converting, setConverting] = useState(null)   // { applicant, as } — 전환 창 열림
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
-    setTimeout(() => setToast(null), 2500)
+    setTimeout(() => setToast(null), 3000)
   }
 
   // ── 명단 불러오기 ──
   const loadApplicants = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/submit-application', { headers: await authHeaders() })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json.error || `서버 응답 ${res.status}`)
+      const json = await callApi('GET')
       setApplicants(json.applicants || [])
+      if (json.slotConfig) setSlotConfig(json.slotConfig)
+      if (json.timeConfig) setTimeConfig(json.timeConfig)
     } catch (err) {
       showToast('명단을 불러오지 못했어요: ' + err.message, 'error')
     }
@@ -78,24 +112,25 @@ export default function Applications() {
 
   useEffect(() => { loadApplicants() }, [loadApplicants])
 
-  // ── 상태 변경 ──
+  // ── 상태 변경 (대기중/연락완료/취소) ──
   const handleStatusChange = async (applicant, newStatus) => {
-    if (applicant.status === newStatus) return
+    if ((applicant.status || '대기중') === newStatus) return
     setSavingId(applicant.id)
     try {
-      const res = await fetch('/api/submit-application', {
-        method: 'PATCH',
-        headers: await authHeaders(),
-        body: JSON.stringify({ id: applicant.id, status: newStatus }),
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json.error || `서버 응답 ${res.status}`)
+      await callApi('PATCH', { id: applicant.id, status: newStatus })
       setApplicants(prev => prev.map(a => (a.id === applicant.id ? { ...a, status: newStatus } : a)))
       showToast(`${applicant.name} → '${newStatus}'(으)로 바꿨어요`)
     } catch (err) {
       showToast('상태 변경 실패: ' + err.message, 'error')
     }
     setSavingId(null)
+  }
+
+  // ── 전환 완료 후 ──
+  const handleConverted = (updated, as) => {
+    setApplicants(prev => prev.map(a => (a.id === updated.id ? updated : a)))
+    setConverting(null)
+    showToast(`${updated.name} 학생을 ${as}(으)로 등록하고 스케줄까지 연동했어요 🎉`)
   }
 
   // ── 신청서 링크 복사 (학부모에게 보낼 때) ──
@@ -127,9 +162,22 @@ export default function Applications() {
     })
   }, [applicants, filter, keyword])
 
+  const HEADERS = ['신청일시', '이름', '학년', 'SMC 재원', '학교', '학부모 연락처', '학생 연락처', '이용권', '희망 스케줄', '희망 시작일', '요청사항', '상태', '학생 전환']
+
   return (
     <Layout>
       {toast && <Toast msg={toast.msg} type={toast.type} />}
+
+      {converting && (
+        <ConvertModal
+          applicant={converting.applicant}
+          initialAs={converting.as}
+          slotConfig={slotConfig}
+          timeConfig={timeConfig}
+          onClose={() => setConverting(null)}
+          onDone={handleConverted}
+        />
+      )}
 
       <div style={{ padding: '28px 32px' }}>
 
@@ -142,7 +190,7 @@ export default function Applications() {
             <div>
               <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#0F172A', margin: 0 }}>신청자 명단</h1>
               <p style={{ fontSize: '13px', color: '#94A3B8', marginTop: '3px' }}>
-                /apply 신청서로 들어온 {applicants.length}건 · 대기중 {counts['대기중'] || 0}건
+                /apply 신청서로 들어온 {applicants.length}건 · 대기중 {counts['대기중'] || 0}건 · [재원생/예비원생 전환]을 누르면 학생·스케줄에 자동 등록돼요
               </p>
             </div>
           </div>
@@ -197,7 +245,7 @@ export default function Applications() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
             <thead>
               <tr>
-                {['신청일시', '이름', '학년', 'SMC 재원', '학교', '학부모 연락처', '학생 연락처', '희망 시작일', '희망 일정', '상태'].map(h => (
+                {HEADERS.map(h => (
                   <th key={h} style={{
                     ...cell, background: '#F8FAFC',
                     fontSize: '11px', fontWeight: 700, color: '#64748B',
@@ -208,15 +256,17 @@ export default function Applications() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} style={{ ...cell, textAlign: 'center', padding: '64px 0', color: '#94A3B8' }}>불러오는 중...</td></tr>
+                <tr><td colSpan={HEADERS.length} style={{ ...cell, textAlign: 'center', padding: '64px 0', color: '#94A3B8' }}>불러오는 중...</td></tr>
               ) : visible.length === 0 ? (
-                <tr><td colSpan={10} style={{ ...cell, textAlign: 'center', padding: '64px 0', color: '#94A3B8' }}>
+                <tr><td colSpan={HEADERS.length} style={{ ...cell, textAlign: 'center', padding: '64px 0', color: '#94A3B8' }}>
                   {applicants.length === 0 ? '아직 들어온 신청서가 없어요' : '조건에 맞는 신청자가 없어요'}
                 </td></tr>
               ) : (
                 visible.map((a, idx) => {
                   const status = a.status || '대기중'
                   const info = STATUS_INFO[status] || STATUS_INFO['대기중']
+                  const converted = !!a.converted_student_id
+                  const summary = summarizeSlots(a.desired_slots)
                   return (
                     <tr key={a.id} style={{ background: idx % 2 === 0 ? '#fff' : '#FAFBFF', opacity: status === '취소' ? 0.6 : 1 }}>
                       <td style={{ ...cell, color: '#64748B', whiteSpace: 'nowrap', fontSize: '12px' }}>{formatDateTime(a.created_at)}</td>
@@ -224,29 +274,77 @@ export default function Applications() {
                       <td style={{ ...cell, whiteSpace: 'nowrap' }}>{a.grade || '–'}</td>
                       <td style={{ ...cell, whiteSpace: 'nowrap' }}>
                         {a.is_academy_student
-                          ? <span style={{ ...pill, background: '#ECFDF5', color: '#059669' }}>재원생</span>
-                          : <span style={{ ...pill, background: '#F1F5F9', color: '#64748B' }}>외부</span>}
+                          ? <span style={{ ...pill, background: '#FFFBEB', color: '#D97706' }}>SMC 재원생</span>
+                          : <span style={{ ...pill, background: '#F1F5F9', color: '#64748B' }}>비재원생</span>}
                       </td>
                       <td style={{ ...cell, whiteSpace: 'nowrap' }}>{a.school || '–'}</td>
                       <td style={cell}><Phone value={a.parent_phone} onCopied={showToast} /></td>
                       <td style={cell}><Phone value={a.student_phone} onCopied={showToast} /></td>
+                      <td style={{ ...cell, whiteSpace: 'nowrap' }}>
+                        {a.membership_type
+                          ? <span style={{ ...pill, background: '#EEF2FF', color: '#4F46E5' }}>{MEMBERSHIP_LABEL[a.membership_type] || a.membership_type}</span>
+                          : <span style={{ color: '#CBD5E1' }}>–</span>}
+                      </td>
+                      <td style={{ ...cell, minWidth: '150px' }}>
+                        {summary.length === 0 ? <span style={{ color: '#CBD5E1' }}>–</span> : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                            {summary.map(s => (
+                              <span key={s.day} style={{ fontSize: '12px', color: '#334155', whiteSpace: 'nowrap' }}>
+                                <strong style={{ color: s.color, marginRight: '5px' }}>{s.day}</strong>{s.text}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ ...cell, whiteSpace: 'nowrap' }}>{formatDate(a.desired_start_date)}</td>
-                      <td style={{ ...cell, minWidth: '180px', maxWidth: '280px', whiteSpace: 'pre-wrap', color: '#334155', lineHeight: 1.5 }}>
+                      <td style={{ ...cell, minWidth: '140px', maxWidth: '240px', whiteSpace: 'pre-wrap', color: '#334155', lineHeight: 1.5, fontSize: '12px' }}>
                         {a.desired_schedule_text || '–'}
                       </td>
                       <td style={{ ...cell, whiteSpace: 'nowrap' }}>
-                        <select
-                          value={status}
-                          disabled={savingId === a.id}
-                          onChange={e => handleStatusChange(a, e.target.value)}
-                          style={{
-                            padding: '6px 10px', borderRadius: '10px', fontSize: '12px', fontWeight: 700,
-                            border: `1.5px solid ${info.border}`, background: info.bg, color: info.color,
-                            cursor: 'pointer', outline: 'none',
-                          }}
-                        >
-                          {STATUS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
+                        {converted ? (
+                          <span style={{ ...pill, background: info.bg, color: info.color, border: `1px solid ${info.border}` }}>등록완료</span>
+                        ) : (
+                          <select
+                            value={status}
+                            disabled={savingId === a.id}
+                            onChange={e => handleStatusChange(a, e.target.value)}
+                            style={{
+                              padding: '6px 10px', borderRadius: '10px', fontSize: '12px', fontWeight: 700,
+                              border: `1.5px solid ${info.border}`, background: info.bg, color: info.color,
+                              cursor: 'pointer', outline: 'none',
+                            }}
+                          >
+                            {!MANUAL_STATUS.includes(status) && <option value={status} disabled>{status}</option>}
+                            {MANUAL_STATUS.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        )}
+                      </td>
+                      <td style={{ ...cell, whiteSpace: 'nowrap' }}>
+                        {converted ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span style={{
+                              ...pill, display: 'inline-flex', alignItems: 'center', gap: '4px',
+                              background: AS_STYLE[a.converted_as]?.bg || '#ECFDF5',
+                              color: AS_STYLE[a.converted_as]?.color || '#059669',
+                            }}>
+                              <UserCheck size={11} /> {a.converted_as || '학생'} 등록됨
+                            </span>
+                            <span style={{ fontSize: '11px', color: '#94A3B8' }}>{formatDateTime(a.converted_at)}</span>
+                          </div>
+                        ) : status === '취소' ? (
+                          <span style={{ fontSize: '12px', color: '#94A3B8' }}>취소된 신청</span>
+                        ) : (
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            {['재원생', '예비원생'].map(as => (
+                              <button key={as} onClick={() => setConverting({ applicant: a, as })} style={{
+                                padding: '6px 10px', borderRadius: '9px', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+                                border: `1.5px solid ${AS_STYLE[as].border}`, background: AS_STYLE[as].bg, color: AS_STYLE[as].color,
+                              }}>
+                                {as} 전환
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )
@@ -260,6 +358,253 @@ export default function Applications() {
       <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
     </Layout>
   )
+}
+
+// ================================================================
+//  전환 확인 창
+// ================================================================
+// 비유: 입학 서류에 도장 찍기 전 마지막으로 "이대로 등록할까요?" 확인하는 창이에요.
+//       신청자가 고른 이용권·교시가 미리 채워져 있고, 상담 결과에 맞게 고칠 수 있어요.
+function ConvertModal({ applicant, initialAs, slotConfig, timeConfig, onClose, onDone }) {
+  const startMembership = applicant.membership_type || ''
+  const [as,          setAs]          = useState(initialAs)
+  const [membership,  setMembership]  = useState(startMembership)
+  const [slots,       setSlots]       = useState(() =>
+    startMembership ? cleanSlots(applicant.desired_slots || emptySlots(), startMembership, slotConfig) : emptySlots())
+  const [seat,        setSeat]        = useState('')
+  const [firstDate,   setFirstDate]   = useState(applicant.desired_start_date ? String(applicant.desired_start_date).slice(0, 10) : '')
+  const [freeSeats,   setFreeSeats]   = useState(null)   // null = 불러오는 중
+  const [saving,      setSaving]      = useState(false)
+  const [error,       setError]       = useState('')
+  const [duplicates,  setDuplicates]  = useState(null)   // 같은 이름 학생 목록
+
+  // 빈 좌석 목록 불러오기 (학생 관리 화면과 같은 규칙: 재원생·예비원생이 쓰는 좌석은 제외)
+  useEffect(() => {
+    (async () => {
+      try {
+        const [cfg, { data: sts, error: stErr }] = await Promise.all([
+          fetchSeatConfig(),
+          supabase.from('students').select('seat_number, status'),
+        ])
+        if (stErr) throw stErr
+        const used = new Set(
+          (sts || [])
+            .filter(s => (s.status || '재원생') !== '퇴원생' && s.seat_number != null)
+            .map(s => Number(s.seat_number))
+        )
+        const list = []
+        for (let n = cfg.min_seat; n <= cfg.max_seat; n++) if (!used.has(n)) list.push(n)
+        setFreeSeats(list)
+      } catch {
+        setFreeSeats([])
+      }
+    })()
+  }, [])
+
+  const changeMembership = (value) => {
+    setMembership(value)
+    setSlots(prev => cleanSlots(prev, value, slotConfig))
+    setError('')
+  }
+
+  const total = membership ? countSlots(cleanSlots(slots, membership, slotConfig)) : 0
+  const asStyle = AS_STYLE[as]
+
+  const submit = async (force = false) => {
+    setError('')
+    if (!membership) { setError('이용권을 선택해주세요'); return }
+    if (total === 0) { setError('스케줄(요일·교시)을 최소 1개 이상 선택해주세요'); return }
+
+    setSaving(true)
+    try {
+      const json = await callApi('PATCH', {
+        action: 'convert',
+        id: applicant.id,
+        as,
+        membership_type: membership,
+        slots: cleanSlots(slots, membership, slotConfig),
+        seat_number: seat === '' ? null : Number(seat),
+        first_attendance_date: firstDate || null,
+        force,
+      })
+      onDone(json.applicant, as)
+    } catch (err) {
+      if (err.data?.code === 'DUPLICATE_NAME') {
+        setDuplicates(err.data.matches || [])
+      } else {
+        setError(err.message)
+      }
+    }
+    setSaving(false)
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+      onClick={e => { if (e.target === e.currentTarget && !saving) onClose() }}>
+      <div style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '640px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}>
+
+        {/* 머리 */}
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>
+              {applicant.name} 학생 등록
+            </h2>
+            <p style={{ margin: '4px 0 0', fontSize: '12.5px', color: '#94A3B8' }}>
+              {applicant.grade} · {applicant.school || '학교 미입력'} · {applicant.is_academy_student ? 'SMC 재원생' : '비재원생'}
+            </p>
+          </div>
+          <button onClick={onClose} disabled={saving} style={{ border: 'none', background: '#F1F5F9', borderRadius: '10px', width: '34px', height: '34px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <X size={17} color="#64748B" />
+          </button>
+        </div>
+
+        {/* 본문 */}
+        <div style={{ padding: '20px 24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+
+          {/* 등록 상태 */}
+          <Section label="어떤 상태로 등록할까요?">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              {['재원생', '예비원생'].map(v => {
+                const on = as === v
+                const s = AS_STYLE[v]
+                return (
+                  <button key={v} type="button" onClick={() => setAs(v)} style={{
+                    padding: '12px', borderRadius: '12px', cursor: 'pointer', textAlign: 'left',
+                    border: on ? `2px solid ${s.solid}` : '1.5px solid #E2E8F0',
+                    background: on ? s.bg : '#fff',
+                  }}>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: on ? s.color : '#475569' }}>{v}</div>
+                    <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '2px' }}>
+                      {v === '재원생' ? '바로 이용 시작 · 스케줄 관리에 바로 보여요' : '등원 전 대기 · 학생 관리에서 재원생으로 바꾸면 스케줄에 보여요'}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </Section>
+
+          {/* 이용권 */}
+          <Section label="이용권">
+            {!startMembership && (
+              <p style={{ fontSize: '12px', color: '#D97706', margin: '0 0 8px' }}>
+                ⚠️ 예전 신청서라 이용권·스케줄 정보가 없어요. 상담 내용대로 직접 골라주세요.
+              </p>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+              {MEMBERSHIP_OPTIONS.map(opt => {
+                const on = membership === opt.value
+                return (
+                  <button key={opt.value} type="button" onClick={() => changeMembership(opt.value)} style={{
+                    padding: '10px', borderRadius: '12px', cursor: 'pointer',
+                    border: on ? '2px solid #6366F1' : '1.5px solid #E2E8F0',
+                    background: on ? '#EEF2FF' : '#fff', color: on ? '#4F46E5' : '#475569',
+                  }}>
+                    <div style={{ fontSize: '14px', fontWeight: 700 }}>{opt.label}</div>
+                    <div style={{ fontSize: '11px', opacity: 0.8 }}>{opt.desc}</div>
+                  </button>
+                )
+              })}
+            </div>
+            {startMembership && membership !== startMembership && (
+              <p style={{ fontSize: '12px', color: '#D97706', margin: '8px 0 0' }}>
+                신청자는 {MEMBERSHIP_LABEL[startMembership]}을 골랐어요. 바뀐 이용권으로 못 오는 요일은 자동으로 비워졌어요.
+              </p>
+            )}
+          </Section>
+
+          {/* 스케줄 */}
+          <Section label={`스케줄 (총 ${total}교시) — 신청자가 고른 그대로 채워져 있어요`}>
+            <SlotPicker
+              membership={membership}
+              slots={slots}
+              onChange={v => { setSlots(v); setError('') }}
+              slotConfig={slotConfig}
+              timeConfig={timeConfig}
+            />
+          </Section>
+
+          {/* 좌석 + 첫등원일 */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <Section label="좌석번호 (선택)">
+              <select value={seat} onChange={e => setSeat(e.target.value)} disabled={freeSeats === null} style={inputStyle}>
+                <option value="">{freeSeats === null ? '빈 좌석 확인 중…' : '나중에 배정'}</option>
+                {(freeSeats || []).map(n => <option key={n} value={n}>{n}번</option>)}
+              </select>
+              {freeSeats && freeSeats.length === 0 && (
+                <p style={{ fontSize: '11.5px', color: '#94A3B8', margin: '5px 0 0' }}>빈 좌석이 없어요 (나중에 배정 가능)</p>
+              )}
+            </Section>
+            <Section label="첫등원일">
+              <input type="date" value={firstDate} onChange={e => setFirstDate(e.target.value)} style={inputStyle} />
+            </Section>
+          </div>
+
+          {applicant.desired_schedule_text && (
+            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '12px 14px', fontSize: '12.5px', color: '#475569', whiteSpace: 'pre-wrap' }}>
+              <strong>신청자 요청사항</strong> (학생 메모에 같이 저장돼요)<br />{applicant.desired_schedule_text}
+            </div>
+          )}
+
+          {/* 같은 이름 경고 */}
+          {duplicates && (
+            <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '12px', padding: '12px 14px', fontSize: '12.5px', color: '#92400E', lineHeight: 1.6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, marginBottom: '4px' }}>
+                <AlertTriangle size={14} /> 같은 이름의 학생이 이미 있어요
+              </div>
+              {duplicates.map((d, i) => (
+                <div key={i}>· {d.name} ({d.grade || '학년?'} · {d.school || '학교?'} · {d.status})</div>
+              ))}
+              <div style={{ marginTop: '6px' }}>
+                같은 학생이면 [닫기] 후 학생 관리에서 확인해주세요. 다른 학생(동명이인)이면 아래 버튼으로 등록하세요.
+              </div>
+              <button onClick={() => submit(true)} disabled={saving} style={{
+                marginTop: '8px', padding: '8px 12px', borderRadius: '10px', border: 'none',
+                background: '#D97706', color: '#fff', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer',
+              }}>
+                동명이인이에요 — 새 학생으로 등록
+              </button>
+            </div>
+          )}
+
+          {error && (
+            <div style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: '12px', padding: '10px 14px', fontSize: '12.5px', color: '#B91C1C' }}>
+              {error}
+            </div>
+          )}
+        </div>
+
+        {/* 하단 버튼 */}
+        <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px' }}>
+          <button onClick={onClose} disabled={saving} style={{
+            flex: 1, padding: '12px', borderRadius: '12px', border: '1.5px solid #E2E8F0',
+            background: '#fff', fontSize: '14px', fontWeight: 600, color: '#64748B', cursor: 'pointer',
+          }}>닫기</button>
+          <button onClick={() => submit(false)} disabled={saving || !!duplicates} style={{
+            flex: 2, padding: '12px', borderRadius: '12px', border: 'none',
+            background: saving || duplicates ? '#CBD5E1' : asStyle.solid,
+            fontSize: '14px', fontWeight: 700, color: '#fff', cursor: saving || duplicates ? 'not-allowed' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+          }}>
+            {saving ? <><Clock size={15} /> 등록 중…</> : <><UserCheck size={15} /> {as}(으)로 등록 + 스케줄 연동</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Section({ label, children }) {
+  return (
+    <div>
+      <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#374151', marginBottom: '8px' }}>{label}</div>
+      {children}
+    </div>
+  )
+}
+
+const inputStyle = {
+  width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #E2E8F0',
+  background: '#F8FAFC', fontSize: '13.5px', color: '#0F172A', outline: 'none', boxSizing: 'border-box',
 }
 
 const btnStyle = {
