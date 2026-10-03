@@ -202,10 +202,11 @@ async function handleSubmit(req, res) {
   if (error) {
     console.error('신청서 저장 실패:', error)
     // 칸이 없다는 오류면 SQL을 아직 안 돌린 것
-    if (/column|schema cache/i.test(error.message)) {
-      return res.status(500).json({ error: '신청서 저장 칸이 준비되지 않았어요 (관리자: SQL 실행 필요)' })
+    // 실제 원인(error.message)도 같이 보여줘서, 문제가 생기면 바로 원인을 알 수 있게 해요
+    if (/could not find|does not exist|schema cache/i.test(error.message)) {
+      return res.status(500).json({ error: `신청서 저장 칸이 준비되지 않았어요 (관리자: SQL 실행 필요) [${error.message}]` })
     }
-    return res.status(500).json({ error: '저장 중 문제가 발생했어요' })
+    return res.status(500).json({ error: `저장 중 문제가 발생했어요 [${error.message}]` })
   }
   return res.status(200).json({ success: true, applicant: data[0] })
 }
