@@ -9,12 +9,18 @@
 //   - PATCH {action:'convert'} : 신청자를 학생으로 등록 + 스케줄 등록 → 로그인한 관리자만
 //   - DELETE {ids:[...]} : 신청서 삭제 (테스트·불필요한 것 정리)    → 로그인한 관리자만
 //
+// 📱 신청서가 접수되면 관리자 휴대폰으로 "새 신청자" 문자를 보내요 (솔라피 사용)
+//    받을 번호: 신청자 명단 화면의 [📱 알림 받을 번호]에서 설정 (DB app_settings 테이블에 저장)
+//    - PATCH {action:'set-notify-phones', phones:[...]} : 번호 저장   → 관리자만
+//    - PATCH {action:'test-notify'}                     : 테스트 문자 → 관리자만
+//
 // ⚠️ 왜 파일 하나에 다 모았나요?
 //    Vercel 무료(Hobby) 요금제는 api 폴더 파일(=서버 함수)을 최대 12개까지만 허용해요.
 //    그래서 파일을 늘리지 않고 이 파일에 기능을 얹었어요.
 // ================================================================
 
 import { createClient } from '@supabase/supabase-js'
+import crypto from 'crypto' // Node.js 내장 암호화 모듈 (솔라피 인증 도장 찍을 때 사용)
 
 // ⚠️ "서비스 키(service role key)" = 직원용 마스터키 (보안 규칙을 우회함)
 //    그래서 절대 화면(프론트엔드) 코드에는 쓰면 안 되고, 서버 코드(api 폴더)에서만 써요.
@@ -141,6 +147,8 @@ export default async function handler(req, res) {
       if (req.method === 'GET') return await handleList(req, res)
       if (req.method === 'DELETE') return await handleDelete(req, res)
       if (req.body?.action === 'convert') return await handleConvert(req, res)
+      if (req.body?.action === 'set-notify-phones') return await handleSetNotifyPhones(req, res)
+      if (req.body?.action === 'test-notify') return await handleTestNotify(req, res)
       return await handleStatus(req, res)
     }
 
@@ -208,7 +216,149 @@ async function handleSubmit(req, res) {
     }
     return res.status(500).json({ error: `저장 중 문제가 발생했어요 [${error.message}]` })
   }
+  // 📱 관리자에게 "새 신청자" 문자 발송
+  //    ⚠️ 문자 발송이 실패해도 신청서는 이미 저장됐으니 신청자에겐 "성공"으로 보여줘요.
+  //    (비유: 접수함에 서류는 이미 들어갔고, 직원 호출벨이 고장 난 것뿐)
+  await notifyNewApplicant(data[0])
+
   return res.status(200).json({ success: true, applicant: data[0] })
+}
+
+// ================================================================
+//  📱 새 신청자 알림 문자
+// ================================================================
+const NOTIFY_SITE = 'https://smc-studycafe.vercel.app'
+const MEMBERSHIP_NAME = { 평일: '평일권', 주말: '주말권', 풀: '풀타임권' }
+
+// 솔라피 인증 헤더 (send-notification.js와 같은 방식)
+// 비유: "우리가 진짜 솔라피 회원이에요"라는 도장을 편지에 찍는 것
+function makeSolapiAuth(apiKey, apiSecret) {
+  const date = new Date().toISOString()
+  const salt = crypto.randomBytes(8).toString('hex')
+  const signature = crypto.createHmac('sha256', apiSecret).update(date + salt).digest('hex')
+  return `HMAC-SHA256 apiKey=${apiKey}, date=${date}, salt=${salt}, signature=${signature}`
+}
+
+function buildNotifyText(app) {
+  const lines = [
+    '[SMC스터디카페] 새 신청서 접수',
+    `${app.name} (${app.grade}${app.is_academy_student ? ' · SMC재원' : ''})`,
+    `이용권: ${MEMBERSHIP_NAME[app.membership_type] || '-'}`,
+    `연락처: ${app.parent_phone || app.student_phone || '-'}`,
+    `확인: ${NOTIFY_SITE}/applications`,
+  ]
+  return lines.join('\n')
+}
+
+// ── 알림 받을 번호 불러오기 (DB → 없으면 예전 방식인 Vercel 환경변수) ──
+const NOTIFY_KEY = 'apply_notify_phones'
+const cleanNum = p => String(p || '').replace(/[^0-9]/g, '')
+const isValidPhone = p => /^01[016789]\d{7,8}$/.test(p)
+
+async function loadNotifyPhones() {
+  const { data, error } = await supabase
+    .from('app_settings').select('value').eq('key', NOTIFY_KEY).maybeSingle()
+  if (!error && data && Array.isArray(data.value)) {
+    return { phones: data.value.map(cleanNum).filter(isValidPhone), tableReady: true }
+  }
+  const envPhones = (process.env.APPLY_NOTIFY_PHONES || '').split(',').map(cleanNum).filter(isValidPhone)
+  return { phones: envPhones, tableReady: !error }
+}
+
+// ── PATCH {action:'set-notify-phones'} : 번호 저장 ──
+async function handleSetNotifyPhones(req, res) {
+  const raw = Array.isArray(req.body?.phones) ? req.body.phones : []
+  const phones = [...new Set(raw.map(cleanNum))]
+  const bad = phones.find(p => !isValidPhone(p))
+  if (bad) return res.status(400).json({ error: `휴대폰 번호 형식이 아니에요: ${bad}` })
+  if (phones.length > 5) return res.status(400).json({ error: '번호는 최대 5개까지 등록할 수 있어요' })
+
+  const { error } = await supabase
+    .from('app_settings')
+    .upsert({ key: NOTIFY_KEY, value: phones, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+  if (error) {
+    if (/could not find|does not exist|schema cache/i.test(error.message)) {
+      return res.status(500).json({ error: `설정 테이블이 없어요 (sql/app_settings.sql 실행 필요) [${error.message}]` })
+    }
+    throw error
+  }
+  return res.status(200).json({ success: true, phones })
+}
+
+// ── PATCH {action:'test-notify'} : 저장된 번호로 테스트 문자 ──
+async function handleTestNotify(req, res) {
+  const results = await notifyNewApplicant(
+    { name: '테스트', grade: '-', is_academy_student: false, membership_type: null, parent_phone: '(테스트 문자예요)' },
+    { test: true },
+  )
+  if (results.length === 0) return res.status(400).json({ error: '먼저 받을 번호를 저장해주세요' })
+  const failed = results.filter(r => r.sendStatus !== 'success')
+  if (failed.length > 0) {
+    return res.status(500).json({ error: '발송 실패: ' + failed.map(f => `${f.to} (${f.errorMessage || '오류'})`).join(', ') })
+  }
+  return res.status(200).json({ success: true, sent: results.length })
+}
+
+// 반환: 번호별 발송 결과 목록 (보낼 번호가 없으면 빈 목록)
+async function notifyNewApplicant(app, { test = false } = {}) {
+  const apiKey    = process.env.SOLAPI_API_KEY
+  const apiSecret = process.env.SOLAPI_API_SECRET
+  const from      = cleanNum(process.env.SOLAPI_FROM_NUMBER)
+  const { phones: targets } = await loadNotifyPhones()
+
+  if (targets.length === 0) return []   // 받을 번호를 아직 안 정했으면 조용히 건너뜀
+  if (!apiKey || !apiSecret || !from) {
+    console.warn('[신청 알림] 솔라피 환경변수가 없어 문자를 못 보냈어요')
+    return targets.map(to => ({ to, sendStatus: 'failed', errorMessage: '솔라피 설정(환경변수) 없음' }))
+  }
+
+  const text = test
+    ? `[SMC스터디카페] 테스트 문자예요.\n새 신청서가 들어오면 이 번호로 알려드려요.`
+    : buildNotifyText(app)
+
+  return await Promise.all(targets.map(async to => {
+    // 5초 안에 응답이 없으면 포기 (신청자가 오래 기다리지 않게)
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 5000)
+    let log = { to, sendStatus: 'failed' }
+    try {
+      const r = await fetch('https://api.solapi.com/messages/v4/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: makeSolapiAuth(apiKey, apiSecret) },
+        // type을 안 적으면 솔라피가 글자 수를 보고 SMS/LMS(장문)를 자동으로 골라요
+        body: JSON.stringify({ message: { to, from, text } }),
+        signal: controller.signal,
+      })
+      const d = await r.json().catch(() => ({}))
+      log = r.ok
+        ? { to, sendStatus: 'success', groupId: d.groupId, messageId: d.messageId, statusCode: d.statusCode, statusMessage: d.statusMessage }
+        : { to, sendStatus: 'failed', errorMessage: d.errorMessage || `솔라피 응답 ${r.status}`, statusCode: d.statusCode, statusMessage: d.statusMessage }
+      if (!r.ok) console.error('[신청 알림] 솔라피 오류:', JSON.stringify(d))
+    } catch (err) {
+      console.error('[신청 알림] 발송 실패:', err.message)
+      log.errorMessage = err.name === 'AbortError' ? '시간 초과(5초)' : err.message
+    } finally {
+      clearTimeout(timer)
+    }
+
+    // "발송 결과 확인" 화면에서 볼 수 있게 기록 (실패해도 무시)
+    try {
+      await supabase.from('notification_logs').insert({
+        student_name: test ? '(테스트)' : app.name,
+        phone: log.to,
+        notify_type: 'apply',
+        send_status: log.sendStatus,
+        error_message: log.errorMessage || null,
+        solapi_group_id: log.groupId || null,
+        solapi_message_id: log.messageId || null,
+        solapi_status_code: log.statusCode || null,
+        solapi_status_message: log.statusMessage || null,
+      })
+    } catch (e) {
+      console.error('[신청 알림] 기록 저장 실패:', e.message)
+    }
+    return log
+  }))
 }
 
 // ────────────────────────────────────────────────
@@ -229,8 +379,8 @@ async function handleList(req, res) {
   }
   if (error) throw error
 
-  const config = await loadScheduleConfig()
-  return res.status(200).json({ applicants: data || [], ...config })
+  const [config, notify] = await Promise.all([loadScheduleConfig(), loadNotifyPhones()])
+  return res.status(200).json({ applicants: data || [], ...config, notifyPhones: notify.phones, notifyReady: notify.tableReady })
 }
 
 // ────────────────────────────────────────────────

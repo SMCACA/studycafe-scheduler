@@ -21,7 +21,7 @@ import {
   emptySlots, cleanSlots, countSlots, summarizeSlots,
 } from '../lib/applySchedule'
 import {
-  UserPlus, RefreshCw, Search, CheckCircle2, XCircle, Copy, Link2, X, AlertTriangle, UserCheck, Clock, Trash2,
+  UserPlus, RefreshCw, Search, CheckCircle2, XCircle, Copy, Link2, X, AlertTriangle, UserCheck, Clock, Trash2, Smartphone, Plus, Send,
 } from 'lucide-react'
 
 const cell = { border: '1px solid #E2E8F0', padding: '11px 14px', verticalAlign: 'middle' }
@@ -92,6 +92,9 @@ export default function Applications() {
   const [deleting,   setDeleting]   = useState(false)
   const [toast,      setToast]      = useState(null)
   const [converting, setConverting] = useState(null)   // { applicant, as } — 전환 창 열림
+  const [notifyPhones, setNotifyPhones] = useState([])  // 새 신청자 문자 받을 번호
+  const [notifyReady,  setNotifyReady]  = useState(true) // 설정 테이블 준비 여부
+  const [showNotify,   setShowNotify]   = useState(false)
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
@@ -106,6 +109,8 @@ export default function Applications() {
       setApplicants(json.applicants || [])
       if (json.slotConfig) setSlotConfig(json.slotConfig)
       if (json.timeConfig) setTimeConfig(json.timeConfig)
+      setNotifyPhones(json.notifyPhones || [])
+      setNotifyReady(json.notifyReady !== false)
     } catch (err) {
       showToast('명단을 불러오지 못했어요: ' + err.message, 'error')
     }
@@ -203,6 +208,16 @@ export default function Applications() {
     <Layout>
       {toast && <Toast msg={toast.msg} type={toast.type} />}
 
+      {showNotify && (
+        <NotifyPhonesModal
+          initial={notifyPhones}
+          ready={notifyReady}
+          onClose={() => setShowNotify(false)}
+          onSaved={phones => { setNotifyPhones(phones); setNotifyReady(true); showToast('알림 받을 번호를 저장했어요 📱') }}
+          showToast={showToast}
+        />
+      )}
+
       {converting && (
         <ConvertModal
           applicant={converting.applicant}
@@ -237,6 +252,12 @@ export default function Applications() {
                 <Trash2 size={15} /> {deleting ? '삭제 중…' : `선택 삭제 (${selected.size})`}
               </button>
             )}
+            <button onClick={() => setShowNotify(true)} style={{
+              ...btnStyle,
+              ...(notifyPhones.length === 0 ? { border: '1.5px solid #FDE68A', background: '#FFFBEB', color: '#B45309' } : {}),
+            }}>
+              <Smartphone size={15} /> 알림 받을 번호 {notifyPhones.length > 0 ? `(${notifyPhones.length})` : '설정'}
+            </button>
             <button onClick={copyApplyLink} style={btnStyle}>
               <Link2 size={15} /> 신청서 링크 복사
             </button>
@@ -648,6 +669,120 @@ function ConvertModal({ applicant, initialAs, slotConfig, timeConfig, onClose, o
           }}>
             {saving ? <><Clock size={15} /> 등록 중…</> : <><UserCheck size={15} /> {as}(으)로 등록 + 스케줄 연동</>}
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ================================================================
+//  📱 새 신청자 문자 받을 번호 설정 창
+// ================================================================
+const formatPhone = p => {
+  const d = String(p).replace(/[^0-9]/g, '')
+  return d.length === 11 ? `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`
+       : d.length === 10 ? `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}` : d
+}
+
+function NotifyPhonesModal({ initial, ready, onClose, onSaved, showToast }) {
+  const [phones,  setPhones]  = useState(initial.map(formatPhone))
+  const [input,   setInput]   = useState('')
+  const [saving,  setSaving]  = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [error,   setError]   = useState('')
+  const changed = phones.join(',') !== initial.map(formatPhone).join(',')
+
+  const add = () => {
+    const d = input.replace(/[^0-9]/g, '')
+    if (!/^01[016789]\d{7,8}$/.test(d)) { setError('휴대폰 번호를 정확히 입력해주세요 (예: 010-1234-5678)'); return }
+    if (phones.map(p => p.replace(/[^0-9]/g, '')).includes(d)) { setError('이미 등록된 번호예요'); return }
+    if (phones.length >= 5) { setError('최대 5개까지 등록할 수 있어요'); return }
+    setPhones([...phones, formatPhone(d)]); setInput(''); setError('')
+  }
+
+  const save = async () => {
+    setSaving(true); setError('')
+    try {
+      const json = await callApi('PATCH', { action: 'set-notify-phones', phones })
+      onSaved(json.phones || [])
+      onClose()
+    } catch (err) { setError(err.message) }
+    setSaving(false)
+  }
+
+  const test = async () => {
+    setTesting(true); setError('')
+    try {
+      const json = await callApi('PATCH', { action: 'test-notify' })
+      showToast(`테스트 문자를 ${json.sent}개 번호로 보냈어요. 휴대폰을 확인해주세요 📩`)
+    } catch (err) { setError(err.message) }
+    setTesting(false)
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+      onClick={e => { if (e.target === e.currentTarget && !saving) onClose() }}>
+      <div style={{ background: '#fff', borderRadius: '20px', width: '100%', maxWidth: '440px', boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}>
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#0F172A' }}>📱 새 신청자 알림 받을 번호</h2>
+            <p style={{ margin: '4px 0 0', fontSize: '12.5px', color: '#94A3B8' }}>신청서가 들어오면 이 번호들로 문자가 가요 (최대 5개)</p>
+          </div>
+          <button onClick={onClose} style={{ border: 'none', background: '#F1F5F9', borderRadius: '10px', width: '34px', height: '34px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <X size={17} color="#64748B" />
+          </button>
+        </div>
+
+        <div style={{ padding: '18px 24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {!ready && (
+            <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: '12px', padding: '10px 14px', fontSize: '12.5px', color: '#92400E' }}>
+              ⚠️ 번호를 저장할 테이블이 아직 없어요. Supabase에서 <strong>sql/app_settings.sql</strong>을 먼저 실행해주세요.
+            </div>
+          )}
+
+          {phones.length === 0 ? (
+            <div style={{ padding: '16px', borderRadius: '12px', border: '1.5px dashed #CBD5E1', color: '#94A3B8', fontSize: '13px', textAlign: 'center' }}>
+              등록된 번호가 없어요 — 지금은 문자가 안 가요
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {phones.map(p => (
+                <div key={p} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: '12px', background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                  <span style={{ fontFamily: 'monospace', fontSize: '14px', fontWeight: 700, color: '#0F172A' }}>{p}</span>
+                  <button onClick={() => setPhones(phones.filter(x => x !== p))} title="삭제" style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#94A3B8', display: 'flex' }}>
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <input value={input} onChange={e => { setInput(e.target.value); setError('') }}
+              onKeyDown={e => { if (e.key === 'Enter') add() }}
+              placeholder="010-0000-0000" inputMode="tel"
+              style={{ ...inputStyle, flex: 1 }} />
+            <button onClick={add} style={{ ...btnStyle, padding: '10px 14px' }}><Plus size={15} /> 추가</button>
+          </div>
+
+          {error && <div style={{ fontSize: '12.5px', color: '#DC2626' }}>{error}</div>}
+
+          <button onClick={test} disabled={testing || changed || phones.length === 0} style={{
+            ...btnStyle, justifyContent: 'center',
+            opacity: testing || changed || phones.length === 0 ? 0.5 : 1,
+            cursor: testing || changed || phones.length === 0 ? 'not-allowed' : 'pointer',
+          }}>
+            <Send size={14} /> {testing ? '보내는 중…' : changed ? '저장 후 테스트할 수 있어요' : '저장된 번호로 테스트 문자 보내기'}
+          </button>
+        </div>
+
+        <div style={{ padding: '16px 24px', borderTop: '1px solid #F1F5F9', display: 'flex', gap: '10px' }}>
+          <button onClick={onClose} style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1.5px solid #E2E8F0', background: '#fff', fontSize: '14px', fontWeight: 600, color: '#64748B', cursor: 'pointer' }}>닫기</button>
+          <button onClick={save} disabled={saving || !changed} style={{
+            flex: 2, padding: '12px', borderRadius: '12px', border: 'none',
+            background: saving || !changed ? '#CBD5E1' : 'linear-gradient(135deg,#6366F1,#7C3AED)',
+            fontSize: '14px', fontWeight: 700, color: '#fff', cursor: saving || !changed ? 'not-allowed' : 'pointer',
+          }}>{saving ? '저장 중…' : '저장'}</button>
         </div>
       </div>
     </div>
