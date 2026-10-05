@@ -64,6 +64,9 @@ const formatKRW = (n) => {
   return Number(n).toLocaleString('ko-KR') + '원'
 }
 
+// 학년 순서 (학생 관리 화면의 학년 목록과 동일 + 성인 포함)
+const GRADE_LIST = ['중1', '중2', '중3', '고1', '고2', '고3', '성인']
+
 // 월 이름
 const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월']
 
@@ -410,7 +413,7 @@ export default function TuitionManagement() {
   // 정렬된 학생 목록
   const sortedStudents = useMemo(() => {
     if (!sortKey) return students
-    const GRADE_ORDER = { '중1': 1, '중2': 2, '중3': 3, '고1': 4, '고2': 5, '고3': 6 }
+    const GRADE_ORDER = { '중1': 1, '중2': 2, '중3': 3, '고1': 4, '고2': 5, '고3': 6, '성인': 7 }
     const MEM_ORDER   = { '풀': 1, '평일': 2, '주말': 3 }
     return [...students].sort((a, b) => {
       let av, bv
@@ -444,6 +447,35 @@ export default function TuitionManagement() {
       const { amount } = getEffectiveAmount(s.id)
       return sum + (amount || 0)
     }, 0)
+  }, [students, baseFees, monthlyFees])
+
+  // ✅ [신규] 학년별 수강료 요약 (선택한 달 기준, 재원생만)
+  //    비유: 재원생 한 명 한 명의 영수증을 학년별 바구니에 나눠 담고, 바구니마다 개수와 금액을 더한 것
+  //    - 금액은 "이번 달 실제 적용 금액" (이번 달 금액이 있으면 그것, 없으면 고정 수강료)
+  //    - 예비원생은 아직 등원 전이라 제외
+  const gradeSummary = useMemo(() => {
+    const blank = () => ({ count: 0, sum: 0, missing: 0 })
+    const map = {}
+    GRADE_LIST.forEach(g => { map[g] = blank() })
+
+    students.filter(s => (s.status || '재원생') === '재원생').forEach(s => {
+      const g = GRADE_LIST.includes(s.grade) ? s.grade : (s.grade || '학년 미입력')
+      if (!map[g]) map[g] = blank()
+      const row = map[g]
+      row.count += 1
+      const { amount } = getEffectiveAmount(s.id)
+      if (amount == null) row.missing += 1
+      else row.sum += Number(amount) || 0
+    })
+
+    // 정해진 학년 순서 → 그 외 학년(있을 때만) 순서로 정렬
+    const extra = Object.keys(map).filter(g => !GRADE_LIST.includes(g))
+    const rows = [...GRADE_LIST, ...extra].map(g => ({ grade: g, ...map[g] }))
+
+    const total = rows.reduce((t, r) => ({
+      count: t.count + r.count, sum: t.sum + r.sum, missing: t.missing + r.missing,
+    }), blank())
+    return { rows, total }
   }, [students, baseFees, monthlyFees])
 
   return (
@@ -705,6 +737,15 @@ export default function TuitionManagement() {
             ))}
           </div>
         </div>
+
+        {/* ── ✅ 학년별 수강료 요약 ── */}
+        {!loading && students.length > 0 && (
+          <GradeSummaryTable
+            rows={gradeSummary.rows}
+            total={gradeSummary.total}
+            title={`${selectedYear}년 ${selectedMonth}월 학년별 수강료`}
+          />
+        )}
 
         {/* ── 수납 안내 ── */}
         <div style={{
@@ -1003,6 +1044,99 @@ export default function TuitionManagement() {
 }
 
 // ── 비고 인라인 편집 컴포넌트 ──────────────────────────────
+// ================================================================
+//  ✅ 학년별 수강료 요약 표
+// ================================================================
+function GradeSummaryTable({ rows, total, title }) {
+  const th = {
+    padding: '9px 14px', background: '#F8FAFC', fontSize: '11px', fontWeight: 700,
+    color: '#64748B', border: '1px solid #E2E8F0', whiteSpace: 'nowrap', letterSpacing: '0.04em',
+  }
+  const td = { padding: '10px 14px', border: '1px solid #E2E8F0', whiteSpace: 'nowrap' }
+  const num = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }
+
+  const gradeBadge = (g) => {
+    const isHigh = g.startsWith('고'), isMid = g.startsWith('중'), isAdult = g === '성인'
+    const sty = isHigh ? { bg: '#EEF2FF', color: '#4F46E5' }
+      : isMid ? { bg: '#ECFDF5', color: '#059669' }
+      : isAdult ? { bg: '#FFF7ED', color: '#C2410C' }
+      : { bg: '#F1F5F9', color: '#64748B' }
+    return (
+      <span style={{ padding: '2px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: 700, background: sty.bg, color: sty.color }}>
+        {g}
+      </span>
+    )
+  }
+
+  return (
+    <div style={{
+      background: '#fff', borderRadius: '16px', border: '1px solid #E2E8F0',
+      padding: '18px 20px', marginBottom: '16px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+        <h3 style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A', margin: 0 }}>📊 {title}</h3>
+        <span style={{ fontSize: '11.5px', color: '#94A3B8' }}>
+          재원생 기준 (예비원생 제외) · 이번 달 금액이 없으면 고정 수강료로 계산
+        </span>
+      </div>
+
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+          <thead>
+            <tr>
+              <th style={{ ...th, textAlign: 'left' }}>학년</th>
+              <th style={{ ...th, textAlign: 'right' }}>재원생 수</th>
+              <th style={{ ...th, textAlign: 'right' }}>수강료 합계</th>
+              <th style={{ ...th, textAlign: 'left', minWidth: '160px' }}>금액 비율</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => {
+              const share = total.sum > 0 ? Math.round((r.sum / total.sum) * 1000) / 10 : 0
+              const empty = r.count === 0
+              return (
+                <tr key={r.grade} style={{ color: empty ? '#CBD5E1' : '#0F172A' }}>
+                  <td style={td}>{gradeBadge(r.grade)}</td>
+                  <td style={{ ...num, fontWeight: 700 }}>{r.count}명</td>
+                  <td style={{ ...num, fontWeight: 700 }}>
+                    {empty ? '–' : formatKRW(r.sum)}
+                    {r.missing > 0 && (
+                      <div style={{ fontSize: '11px', fontWeight: 600, color: '#D97706' }}>금액 미입력 {r.missing}명</div>
+                    )}
+                  </td>
+                  <td style={td}>
+                    {empty ? '–' : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ flex: 1, height: '8px', borderRadius: '999px', background: '#F1F5F9', minWidth: '70px' }}>
+                          <div style={{ width: `${share}%`, height: '100%', borderRadius: '999px', background: '#10B981' }} />
+                        </div>
+                        <span style={{ fontSize: '11.5px', color: '#64748B', minWidth: '40px', textAlign: 'right' }}>{share}%</span>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+          <tfoot>
+            <tr style={{ background: '#F0FDF4' }}>
+              <td style={{ ...td, fontWeight: 800, color: '#065F46' }}>합계</td>
+              <td style={{ ...num, fontWeight: 800, color: '#065F46' }}>{total.count}명</td>
+              <td style={{ ...num, fontWeight: 800, color: '#065F46', fontSize: '14px' }}>
+                {formatKRW(total.sum)}
+                {total.missing > 0 && (
+                  <div style={{ fontSize: '11px', fontWeight: 600, color: '#D97706' }}>금액 미입력 {total.missing}명 (합계에서 제외)</div>
+                )}
+              </td>
+              <td style={{ ...td, fontSize: '11.5px', color: '#065F46' }}>100%</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function NoteCell({ value, onChange }) {
   const [local, setLocal] = useState(value || '')
   const [editing, setEditing] = useState(false)
